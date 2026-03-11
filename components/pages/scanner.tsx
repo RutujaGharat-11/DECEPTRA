@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { apiUrl } from '@/lib/api';
 import {
   AlertCircle,
   AlertTriangle,
@@ -96,7 +97,7 @@ export function Scanner() {
       return;
     }
 
-    fetch('http://127.0.0.1:5000/api/history', {
+    fetch(apiUrl('/api/history'), {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (response) => {
@@ -145,7 +146,7 @@ export function Scanner() {
 
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://127.0.0.1:5000/analyze', {
+      const response = await fetch(apiUrl('/analyze'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

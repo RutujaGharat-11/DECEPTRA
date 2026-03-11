@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Search, ArrowRight, AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { apiUrl } from '@/lib/api';
 
 interface HistoryItem {
   id: number;
@@ -35,7 +36,7 @@ export function History() {
       return;
     }
 
-    fetch('http://127.0.0.1:5000/api/history', {
+    fetch(apiUrl('/api/history'), {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
@@ -131,7 +132,7 @@ export function History() {
 
     setClearing(true);
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/history', {
+      const res = await fetch(apiUrl('/api/history'), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });

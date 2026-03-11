@@ -13,7 +13,13 @@ from werkzeug.security import check_password_hash, generate_password_hash
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").strip()
+if CORS_ORIGINS == "*":
+    CORS(app)
+else:
+    allowed_origins = [origin.strip() for origin in CORS_ORIGINS.split(",") if origin.strip()]
+    CORS(app, resources={r"/*": {"origins": allowed_origins}})
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "auth.db")
 

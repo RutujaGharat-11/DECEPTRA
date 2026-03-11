@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { HelpCircle, ChevronDown, LogOut } from 'lucide-react';
+import { apiUrl } from '@/lib/api';
 
 export function Settings() {
   const router = useRouter();
@@ -49,7 +50,7 @@ export function Settings() {
     };
 
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/settings', {
+      const response = await fetch(apiUrl('/api/settings'), {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -87,7 +88,7 @@ export function Settings() {
       return;
     }
 
-    fetch('http://127.0.0.1:5000/api/settings', {
+    fetch(apiUrl('/api/settings'), {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
@@ -117,7 +118,7 @@ export function Settings() {
       })
       .finally(() => setSettingsReady(true));
 
-    fetch('http://127.0.0.1:5000/auth/me', {
+    fetch(apiUrl('/auth/me'), {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
@@ -140,13 +141,12 @@ export function Settings() {
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() || '')
     .join('');
 
   const handleSignOut = async () => {
     const token = localStorage.getItem('auth_token');
     try {
-      await fetch('http://127.0.0.1:5000/auth/logout', {
+      await fetch(apiUrl('/auth/logout'), {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });

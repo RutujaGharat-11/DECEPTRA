@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, AlertCircle, AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { apiUrl } from '@/lib/api';
 
 type ReportsTab = 'overview' | 'history' | 'anomalies';
 
@@ -71,8 +72,8 @@ export function Reports({ initialTab = 'overview' }: ReportsProps) {
     try {
       if (tab === 'overview') {
         const [overviewData, historyData] = await Promise.all([
-          fetchJson('http://127.0.0.1:5000/api/reports/overview'),
-          fetchJson('http://127.0.0.1:5000/api/reports/history'),
+          fetchJson(apiUrl('/api/reports/overview')),
+          fetchJson(apiUrl('/api/reports/history')),
         ]);
 
         if (overviewData) setOverview(overviewData as OverviewData);
@@ -81,8 +82,8 @@ export function Reports({ initialTab = 'overview' }: ReportsProps) {
       }
 
       const endpointByTab: Record<Exclude<ReportsTab, 'overview'>, string> = {
-        history: 'http://127.0.0.1:5000/api/reports/history',
-        anomalies: 'http://127.0.0.1:5000/api/reports/anomalies',
+        history: apiUrl('/api/reports/history'),
+        anomalies: apiUrl('/api/reports/anomalies'),
       };
 
       const data = await fetchJson(endpointByTab[tab]);
@@ -293,7 +294,7 @@ export function Reports({ initialTab = 'overview' }: ReportsProps) {
 
     setClearing(true);
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/history', {
+      const res = await fetch(apiUrl('/api/history'), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });

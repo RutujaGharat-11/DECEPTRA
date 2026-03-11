@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertCircle, BadgeAlert, Ban, Info, Landmark, Link2Off, ShieldAlert, ShieldCheck, Siren, Wallet } from 'lucide-react';
+import { apiUrl } from '@/lib/api';
 
 type ReportData = {
   id: number;
@@ -32,7 +33,7 @@ export default function ReportDetailPage() {
       return;
     }
 
-    fetch(`http://127.0.0.1:5000/api/history/${params.id}`, {
+    fetch(apiUrl(`/api/history/${params.id}`), {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
