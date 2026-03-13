@@ -141,6 +141,7 @@ export function Settings() {
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
+    .map((namePart) => namePart.charAt(0).toUpperCase())
     .join('');
 
   const handleSignOut = async () => {
@@ -213,13 +214,13 @@ export function Settings() {
       {/* Account Section */}
       <div className="space-y-3">
         <h2 className="text-muted-foreground text-xs font-bold uppercase tracking-wider">Account Information</h2>
-        <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-4">
+        <div className="bg-card border border-border rounded-lg p-4 flex items-center gap-4 overflow-hidden">
           <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
             <span className="text-foreground font-bold text-xl">{initials || 'U'}</span>
           </div>
-          <div className="flex-1">
-            <p className="font-bold text-foreground">{profileName || 'User'}</p>
-            <p className="text-muted-foreground text-sm">{profileEmail || 'user@example.com'}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-bold text-foreground">{profileName || 'User'}</p>
+            <p className="truncate text-muted-foreground text-sm">{profileEmail || 'user@example.com'}</p>
           </div>
         </div>
       </div>
