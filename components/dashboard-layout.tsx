@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Bell, User } from 'lucide-react';
 import { Navigation } from './navigation';
 import { Scanner } from './pages/scanner';
 import { History } from './pages/history';
@@ -55,7 +54,7 @@ export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = '
     <div className="flex flex-col min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-background">
-        <div className="px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 flex items-center justify-start">
           <div className="flex items-center gap-3">
             <Image
               src="/logo.png"
@@ -65,14 +64,6 @@ export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = '
               className="w-8 h-8"
             />
             <h1 className="text-xl font-bold text-foreground">NeuroShield AI</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <button className="p-2 hover:bg-card rounded-lg transition">
-              <Bell className="w-5 h-5 text-muted-foreground" />
-            </button>
-            <button className="p-2 hover:bg-card rounded-lg transition">
-              <User className="w-5 h-5 text-muted-foreground" />
-            </button>
           </div>
         </div>
       </header>
