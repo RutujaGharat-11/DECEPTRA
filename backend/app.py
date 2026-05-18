@@ -3,7 +3,6 @@ import os
 import re
 import sqlite3
 import uuid
-import tempfile
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -19,7 +18,6 @@ from backend.gemini_engine import (
     _translate_to_english,
     model,
 )
-from backend.pipelines.voice_pipeline import process_voice_pipeline
 from backend.threat_engine import (
     HIGH_RISK_SIGNALS,
     SIGNAL_PATTERNS,
@@ -38,6 +36,8 @@ from backend.threat_engine import (
     _signals_from_message_cues,
     _to_score,
 )
+from backend.pipelines.text_pipeline import process_text_pipeline
+from backend.pipelines.image_pipeline import process_image_pipeline
 
 try:
     from langdetect import DetectorFactory, LangDetectException, detect_langs
@@ -335,12 +335,6 @@ def _default_settings_dict():
         "educational_tips": True,
         "auto_archive_days": 30,
     }
-
-
-def _is_supported_audio_filename(filename):
-    if not filename:
-        return False
-    return os.path.splitext(filename)[1].lower() in {".mp3", ".wav", ".m4a"}
 
 
 def _contains_devanagari(text):
@@ -928,195 +922,87 @@ def update_settings():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    try:
-        token = _extract_bearer_token()
-        user = _session_user(token)
-        if not user:
-            return jsonify({"error": "Unauthorized"}), 401
-
-        data = request.get_json(silent=True) or {}
-        original_text = (data.get("message") or data.get("text") or "").strip()
-
-        if not original_text:
-            return jsonify({"error": "Message is required"}), 400
-
-        #  LANGUAGE DETECTION
-        message = original_text
-        detected = _detect_input_language(message)
-        detected_language = detected["label"]
-        detected_language_key = detected_language.lower()
-        
-        translated = False
-        original_message = message
-
-        if detected_language_key != "english":
-            message = _translate_to_english(message, detected["label"])
-            translated = True
-
-        translated_to_english = translated
-        normalized_text = message
-
-        if not normalized_text:
-            normalized_text = original_message
-
-        if model is None:
-            analysis = _fallback_analysis(original_message)
-            analysis["detected_language"] = detected_language
-            analysis["translated_to_english"] = translated
-        else:
-            analysis = _analyze_normalized_text(normalized_text)
-
-        print("Parsed JSON successfully")
-
-        #  Translate output back if needed
-        if translated:
-            analysis["explanation"] = _translate_back(
-                analysis.get("explanation", ""), detected_language
-            )
-
-            analysis["safety_actions"] = [
-                _translate_back(action, detected_language)
-                for action in analysis.get("safety_actions", [])
-            ]
-
-            analysis["threat_highlights"] = [
-                {
-                    "snippet": _translate_back(h.get("snippet", ""), detected_language),
-                    "explanation": _translate_back(h.get("explanation", ""), detected_language)
-                }
-                for h in analysis.get("threat_highlights", [])
-            ]
-
-        # Add metadata
-        analysis["detected_language"] = detected_language
-        analysis["translated_to_english"] = translated
-        
-        # Add modality awareness and findings
-        modality = data.get("modality", "text")
-        analysis["modality"] = modality
-        analysis["risk_findings"] = _get_risk_findings(analysis)
-        
-        if modality == "image":
-            analysis["detected_source"] = _detect_source_heuristics(original_message)
-        elif modality == "document":
-            analysis["detected_source"] = "Uploaded Document"
-
-        _save_history_record(user["id"], original_message, analysis)
-
-        return jsonify(analysis), 200
-    except json.JSONDecodeError:
-        app.logger.exception("Gemini response JSON parsing failed; using fallback analysis")
-        data = request.get_json(silent=True) or {}
-        original_text = (data.get("message") or data.get("text") or "").strip()
-        token = _extract_bearer_token()
-        user = _session_user(token)
-        if not user:
-            return jsonify({"error": "Unauthorized"}), 401
-        detected = _detect_input_language(original_text)
-        translated_to_english = detected["label"] != "English"
-        normalized_text = _translate_to_english(original_text, detected["label"])
-        analysis = _fallback_analysis(normalized_text or original_text)
-        localized_analysis = _translate_analysis_for_ui(analysis, detected["label"])
-        _save_history_record(user["id"], original_text, analysis)
-        response_payload = {
-            "detected_language": detected["label"],
-            "translated_to_english": translated_to_english,
-            "normalized_text": normalized_text or original_text,
-            "original_text": original_text,
-            "translated_text": normalized_text or original_text,
-            "analysis": localized_analysis,
-            "threat_highlights": localized_analysis.get("threat_highlights", []),
-        }
-        response_payload.update(localized_analysis)
-        return jsonify(response_payload), 200
-    except Exception as exc:
-        details = str(exc)
-        print(f"Gemini API error: {details}")
-        app.logger.exception("Gemini API request failed; using fallback analysis")
-        data = request.get_json(silent=True) or {}
-        original_text = (data.get("message") or data.get("text") or "").strip()
-        token = _extract_bearer_token()
-        user = _session_user(token)
-        if not user:
-            return jsonify({"error": "Unauthorized"}), 401
-        detected = _detect_input_language(original_text)
-        translated_to_english = detected["label"] != "English"
-        normalized_text = _translate_to_english(original_text, detected["label"])
-        analysis = _fallback_analysis(normalized_text or original_text)
-        localized_analysis = _translate_analysis_for_ui(analysis, detected["label"])
-        _save_history_record(user["id"], original_text, analysis)
-        response_payload = {
-            "detected_language": detected["label"],
-            "translated_to_english": translated_to_english,
-            "normalized_text": normalized_text or original_text,
-            "original_text": original_text,
-            "translated_text": normalized_text or original_text,
-            "analysis": localized_analysis,
-            "threat_highlights": localized_analysis.get("threat_highlights", []),
-        }
-        response_payload.update(localized_analysis)
-        return jsonify(response_payload), 200
-
-
-@app.route("/analyze/voice", methods=["POST"])
-@app.route("/analyze/audio", methods=["POST"])
-def analyze_voice():
     token = _extract_bearer_token()
     user = _session_user(token)
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
 
-    uploaded_file = request.files.get("file") or request.files.get("audio")
+    data = request.get_json(silent=True) or {}
+    original_text = (data.get("message") or data.get("text") or "").strip()
+
+    if not original_text:
+        return jsonify({"error": "Message is required"}), 400
+
+    analysis = process_text_pipeline(original_text)
+    
+    # Add modality awareness and findings
+    analysis["modality"] = data.get("modality", "text")
+    analysis["risk_findings"] = _get_risk_findings(analysis)
+    
+    if analysis["modality"] == "image":
+        analysis["detected_source"] = _detect_source_heuristics(original_text)
+
+    _save_history_record(user["id"], original_text, analysis)
+
+    return jsonify(analysis), 200
+
+
+@app.route("/analyze/image", methods=["POST"])
+def analyze_image():
+    """OCR/Image intelligence endpoint - uses CENTRALIZED threat vector engine."""
+    token = _extract_bearer_token()
+    user = _session_user(token)
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    if "file" not in request.files:
+        return jsonify({"error": "File is required"}), 400
+
+    uploaded_file = request.files["file"]
     if not uploaded_file or uploaded_file.filename == "":
-        return jsonify({"error": "Audio file is required"}), 400
+        return jsonify({"error": "No file selected"}), 400
 
-    if not _is_supported_audio_filename(uploaded_file.filename):
-        return jsonify({"error": "Unsupported audio format. Please upload mp3, wav, or m4a."}), 400
+    # Process image through OCR pipeline
+    image_response = process_image_pipeline(uploaded_file)
 
-    temp_path = ""
-    try:
-        _, extension = os.path.splitext(uploaded_file.filename)
-        suffix = extension.lower() if extension else ".audio"
+    # Extract threat vectors from nested analysis
+    analysis_data = image_response.get("analysis", {})
+    
+    # Build response with vectors at TOP LEVEL (matching text analysis schema)
+    # while preserving image-specific fields
+    response_payload = {
+        # Vector fields at TOP LEVEL (for frontend threat rendering)
+        "risk_level": analysis_data.get("risk_level", "LOW"),
+        "risk_color": analysis_data.get("risk_color", "blue"),
+        "confidence_score": analysis_data.get("confidence_score", 0),
+        "signals": analysis_data.get("signals", []),
+        "explanation": analysis_data.get("explanation", ""),
+        "urgency_level": analysis_data.get("urgency_level", 0),
+        "authority_claim": analysis_data.get("authority_claim", 0),
+        "emotional_pressure": analysis_data.get("emotional_pressure", 0),
+        "financial_request": analysis_data.get("financial_request", 0),
+        "safety_actions": analysis_data.get("safety_actions", []),
+        "threat_highlights": analysis_data.get("threat_highlights", []),
+        
+        # Image-specific fields (visual forensic intelligence)
+        "modality": "image",
+        "extracted_text": image_response.get("extracted_text", ""),
+        "detected_links": image_response.get("detected_links", []),
+        "qr_data": image_response.get("qr_data", []),
+        "platform_detected": image_response.get("platform_detected", "Unknown"),
+        "detected_source": _detect_source_heuristics(image_response.get("extracted_text", "")),
+        "risk_findings": _get_risk_findings(analysis_data),
+        "extraction_status": image_response.get("extraction_status", "no_text_detected"),
+    }
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-            uploaded_file.save(temp_file)
-            temp_path = temp_file.name
+    # Debug: print final response schema
+    print(f"[DEBUG /analyze/image] CENTRALIZED vectors - urgency: {response_payload['urgency_level']}, authority: {response_payload['authority_claim']}, emotional: {response_payload['emotional_pressure']}, financial: {response_payload['financial_request']}")
 
-        voice_result = process_voice_pipeline(temp_path)
-        analysis = voice_result.get("analysis") or {}
-        if not isinstance(analysis, dict):
-            analysis = {}
+    # Save to history using extracted text as source
+    extracted_text = image_response.get("extracted_text", "[Image uploaded for analysis]")
+    _save_history_record(user["id"], extracted_text, response_payload)
 
-        transcript = (voice_result.get("transcript") or "").strip()
-        detected_language = analysis.get("detected_language") or voice_result.get("language") or "Unknown"
-
-        response_payload = dict(analysis)
-        response_payload.update(
-            {
-                "success": bool(voice_result.get("success", False)),
-                "transcript": transcript,
-                "language": voice_result.get("language", "Unknown"),
-                "detected_language": detected_language,
-                "translated_to_english": bool(analysis.get("translated_to_english", False)),
-                "risk_score": response_payload.get("confidence_score", 0),
-                "modality": "audio",
-                "risk_findings": _get_risk_findings(analysis),
-                "analysis": analysis,
-                "source_type": "Voice / Audio Upload",
-            }
-        )
-
-        _save_history_record(user["id"], transcript or uploaded_file.filename, response_payload)
-        return jsonify(response_payload), 200
-    except Exception as exc:
-        app.logger.exception("Voice analysis failed")
-        return jsonify({"error": "Voice analysis failed", "details": str(exc)}), 500
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
+    return jsonify(response_payload), 200
 
 
 if __name__ == "__main__":
