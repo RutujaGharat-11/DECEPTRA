@@ -3,3 +3,10 @@ flask-cors
 python-dotenv
 google-generativeai
 gunicorn
+langdetect
+pyzbar
+Pillow
+pdfplumber
+faster-whisper
+ffmpeg-python
+deepgram-sdk

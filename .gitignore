@@ -7,9 +7,12 @@ __v0_jsx-dev-runtime.ts
 node_modules/
 .next/
 .env
+.env.*
 .env*.local
 .DS_Store
 __pycache__/
 *.pyc
 .venv/
+.vscode/
+*.tsbuildinfo
 auth.db
