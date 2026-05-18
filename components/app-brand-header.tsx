@@ -4,16 +4,28 @@ import Image from 'next/image';
 
 export function AppBrandHeader() {
   return (
-    <div className="flex flex-col items-center justify-center text-center space-y-3 sm:space-y-4">
+    <div className="flex flex-col items-center justify-center text-center space-y-2 sm:space-y-3">
       <Image
         src="/logo.png"
-        alt="NeuroShield AI logo"
-        width={88}
-        height={88}
-        className="w-16 h-16 sm:w-20 sm:h-20 object-contain"
+        alt="Deceptra logo"
+        width={72}
+        height={72}
+        className="w-14 h-14 sm:w-16 sm:h-16 object-contain"
         priority
       />
-      <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">NeuroShield AI</h1>
+      <h1
+        className="text-foreground/95 uppercase"
+        style={{
+          fontFamily: 'Orbitron, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial',
+          fontWeight: 500,
+          fontSize: '30px',
+          lineHeight: '36px',
+          letterSpacing: '0.06em',
+          WebkitFontSmoothing: 'antialiased',
+        }}
+      >
+        Deceptra
+      </h1>
     </div>
   );
 }
