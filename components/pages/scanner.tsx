@@ -35,8 +35,48 @@ import {
   Link,
   ExternalLink
 } from 'lucide-react';
-import { createWorker } from 'tesseract.js';
 import { AIInterpretation } from '@/components/ai-interpretation';
+
+const TESSERACT_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js';
+
+let tesseractLoaderPromise: Promise<any> | null = null;
+
+const loadTesseractCreateWorker = async () => {
+  if (typeof window === 'undefined') {
+    throw new Error('OCR is only available in the browser.');
+  }
+
+  const existingWorkerFactory = (window as any).Tesseract?.createWorker;
+  if (existingWorkerFactory) {
+    return existingWorkerFactory;
+  }
+
+  if (!tesseractLoaderPromise) {
+    tesseractLoaderPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = TESSERACT_SCRIPT_URL;
+      script.async = true;
+
+      script.onload = () => {
+        const workerFactory = (window as any).Tesseract?.createWorker;
+        if (workerFactory) {
+          resolve(workerFactory);
+          return;
+        }
+
+        reject(new Error('Tesseract loaded but did not expose a worker factory.'));
+      };
+
+      script.onerror = () => {
+        reject(new Error('Unable to load the OCR engine.'));
+      };
+
+      document.head.appendChild(script);
+    });
+  }
+
+  return tesseractLoaderPromise;
+};
 
 const orbitron = Orbitron({
   subsets: ['latin'],
@@ -532,6 +572,7 @@ export function Scanner() {
     setExtractionProgress('Initializing OCR engine...');
 
     try {
+      const createWorker = await loadTesseractCreateWorker();
       const worker = await createWorker('eng');
       setExtractionProgress('Extracting text preview...');
       const ret = await worker.recognize(file);
