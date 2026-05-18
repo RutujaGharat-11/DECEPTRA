@@ -3,11 +3,11 @@
 import { 
   Search, 
   Clock, 
-  BarChart3, 
-  Settings as SettingsIcon 
+  User as UserIcon 
 } from 'lucide-react';
+import Dock from './ui/Dock';
 
-type Page = 'scanner' | 'history' | 'reports' | 'settings';
+type Page = 'scanner' | 'history' | 'profile';
 
 interface NavigationProps {
   currentPage: Page;
@@ -15,31 +15,34 @@ interface NavigationProps {
 }
 
 export function Navigation({ currentPage, onPageChange }: NavigationProps) {
-  const navItems: Array<{ id: Page; label: string; icon: React.ReactNode }> = [
-    { id: 'scanner', label: 'Scanner', icon: <Search className="w-5 h-5" /> },
-    { id: 'history', label: 'History', icon: <Clock className="w-5 h-5" /> },
-    { id: 'reports', label: 'Reports', icon: <BarChart3 className="w-5 h-5" /> },
-    { id: 'settings', label: 'Settings', icon: <SettingsIcon className="w-5 h-5" /> },
+  const items = [
+    { 
+      icon: <Search size={24} className={currentPage === 'scanner' ? 'text-primary' : 'text-muted-foreground'} />, 
+      label: 'Scanner', 
+      onClick: () => onPageChange('scanner') 
+    },
+    { 
+      icon: <Clock size={24} className={currentPage === 'history' ? 'text-primary' : 'text-muted-foreground'} />, 
+      label: 'History', 
+      onClick: () => onPageChange('history') 
+    },
+    { 
+      icon: <UserIcon size={24} className={currentPage === 'profile' ? 'text-primary' : 'text-muted-foreground'} />, 
+      label: 'Profile', 
+      onClick: () => onPageChange('profile') 
+    },
   ];
 
   return (
-    <nav className="border-t border-border bg-background fixed bottom-0 left-0 right-0">
-      <div className="flex justify-around items-center">
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onPageChange(item.id)}
-            className={`flex-1 py-4 flex flex-col items-center gap-1 transition-colors ${
-              currentPage === item.id
-                ? 'text-primary'
-                : 'text-muted-foreground'
-            }`}
-          >
-            {item.icon}
-            <span className="text-xs font-medium">{item.label}</span>
-          </button>
-        ))}
+    <div className="fixed bottom-0 left-0 right-0 h-28 pointer-events-none z-50 flex items-end justify-center">
+      <div className="pointer-events-auto relative w-full h-full flex items-end justify-center">
+        <Dock 
+          items={items}
+          panelHeight={76}
+          baseItemSize={56}
+          magnification={80}
+        />
       </div>
-    </nav>
+    </div>
   );
 }

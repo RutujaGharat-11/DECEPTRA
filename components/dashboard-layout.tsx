@@ -6,18 +6,16 @@ import { useRouter } from 'next/navigation';
 import { Navigation } from './navigation';
 import { Scanner } from './pages/scanner';
 import { History } from './pages/history';
-import { Reports } from './pages/reports';
-import { Settings } from './pages/settings';
+import { ProfileDashboard } from './pages/profile';
+import { BrandLogo } from './brand-logo';
 
-type Page = 'scanner' | 'history' | 'reports' | 'settings';
-type ReportsTab = 'overview' | 'history' | 'anomalies';
+type Page = 'scanner' | 'history' | 'profile';
 
 interface DashboardLayoutProps {
   initialPage?: Page;
-  initialReportsTab?: ReportsTab;
 }
 
-export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = 'overview' }: DashboardLayoutProps) {
+export function DashboardLayout({ initialPage = 'scanner' }: DashboardLayoutProps) {
   const [currentPage, setCurrentPage] = useState<Page>(initialPage);
   const [authReady, setAuthReady] = useState(false);
   const router = useRouter();
@@ -35,44 +33,28 @@ export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = '
     return null;
   }
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'scanner':
-        return <Scanner />;
-      case 'history':
-        return <History />;
-      case 'reports':
-        return <Reports initialTab={initialReportsTab} />;
-      case 'settings':
-        return <Settings />;
-      default:
-        return <Scanner />;
-    }
-  };
+  // Scanner manages its own fixed header and full-viewport layout
+  if (currentPage === 'scanner') {
+    return (
+      <div className="h-screen bg-[#020813] overflow-hidden">
+        <Scanner />
+        <Navigation currentPage={currentPage} onPageChange={setCurrentPage} />
+      </div>
+    );
+  }
 
+  // History and Profile use a shared branded header + scrollable layout
   return (
-    <div className="flex flex-col min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-background">
-        <div className="px-4 sm:px-6 py-4 flex items-center justify-start">
-          <div className="flex items-center gap-3">
-            <Image
-              src="/logo.png"
-              alt="NeuroShield AI"
-              width={40}
-              height={40}
-              className="w-8 h-8"
-            />
-            <h1 className="text-xl font-bold text-foreground">NeuroShield AI</h1>
-          </div>
-        </div>
+    <div className="flex flex-col h-screen bg-[#020813] overflow-hidden">
+      {/* Branded Top Header */}
+      <header className="flex-shrink-0 flex items-center justify-between px-6 py-3 bg-[#020813]/95 backdrop-blur-xl border-b border-[#1e3a8a]/40 shadow-[0_1px_0_rgba(0,212,255,0.12),0_8px_32px_-8px_rgba(0,212,255,0.15)]">
+        <BrandLogo />
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-6 pb-20">
-        <div className="mx-auto w-full max-w-[1320px]">
-          {renderPage()}
-        </div>
+      {/* Scrollable Page Content */}
+      <main className="flex-1 overflow-y-auto pb-28">
+        {currentPage === 'history' && <History />}
+        {currentPage === 'profile' && <ProfileDashboard />}
       </main>
 
       {/* Bottom Navigation */}
