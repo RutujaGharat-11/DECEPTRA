@@ -524,7 +524,7 @@ export function Scanner() {
         risk_level: 'MEDIUM',
         confidence_score: 0,
         signals: [],
-        explanation: `Connection error: ${error instanceof Error ? error.message : 'Unable to reach analysis service. Ensure backend is running on http://127.0.0.1:5000'}`,
+        explanation: `Connection error: ${error instanceof Error ? error.message : 'Unable to reach analysis service. Check NEXT_PUBLIC_API_URL in your deployment environment.'}`,
       });
     } finally {
       setStatus('complete');
