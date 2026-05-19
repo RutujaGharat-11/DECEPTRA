@@ -98,6 +98,17 @@ def after_request(response):
     response.headers.set("Access-Control-Allow-Credentials", "true")
     return response
 
+@app.errorhandler(Exception)
+def handle_global_error(e):
+    app.logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
+    # Ensure errors are serialized as JSON and always return a 500 (or the exception's code)
+    # to prevent Flask from sending HTML error pages which trigger CORS errors in the browser.
+    code = 500
+    if hasattr(e, 'code'):
+        code = e.code
+    return jsonify({"error": "Internal Server Error", "details": str(e)}), code
+
+
 DB_PATH = os.path.join(os.path.dirname(__file__), "auth.db")
 DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 HINDI_HINTS = {
