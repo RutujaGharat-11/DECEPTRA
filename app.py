@@ -995,6 +995,7 @@ def analyze():
                 # We do NOT return 401 here to allow public scans to continue seamlessly.
 
         data = request.get_json(silent=True) or {}
+        modality = data.get("modality", "text")
         original_text = (data.get("message") or data.get("text") or "").strip()
 
         if not original_text:
@@ -1026,7 +1027,7 @@ def analyze():
         else:
             analysis = _analyze_normalized_text(normalized_text)
 
-        print("Parsed JSON successfully")
+        app.logger.info(f"Analysis completed for {modality} modality.")
 
         #  Translate output back if needed
         if translated:
@@ -1052,7 +1053,6 @@ def analyze():
         analysis["translated_to_english"] = translated
         
         # Add modality awareness and findings
-        modality = data.get("modality", "text")
         analysis["modality"] = modality
         analysis["risk_findings"] = _get_risk_findings(analysis)
         

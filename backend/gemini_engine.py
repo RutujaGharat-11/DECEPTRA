@@ -213,12 +213,26 @@ Return exactly this JSON schema:
 }}
 """
 
-    response = model.generate_content(
-        prompt,
-        generation_config={"response_mime_type": "application/json"},
-    )
-    raw_text = getattr(response, "text", "") or ""
-    return _normalize_analysis(_extract_json(raw_text), message)
+    # --- Gemini API call with full exception protection ---
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"},
+        )
+        raw_text = getattr(response, "text", "") or ""
+        if not raw_text.strip():
+            import logging
+            logging.getLogger(__name__).warning(
+                "Gemini returned an empty response body; using fallback analysis."
+            )
+            return _fallback_analysis(message)
+        return _normalize_analysis(_extract_json(raw_text), message)
+    except Exception as gemini_exc:
+        import logging
+        logging.getLogger(__name__).error(
+            f"Gemini generate_content failed: {gemini_exc}", exc_info=True
+        )
+        return _fallback_analysis(message)
 
 
 def _generate_explanation_from_vectors(message, vectors, signals, risk_level):
