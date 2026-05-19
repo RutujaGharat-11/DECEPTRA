@@ -52,12 +52,51 @@ load_dotenv()
 
 app = Flask(__name__)
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").strip()
-if CORS_ORIGINS == "*":
-    CORS(app)
+import logging
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+app.logger.setLevel(logging.INFO)
+
+app.logger.info("Starting up backend...")
+if os.getenv("GEMINI_API_KEY"):
+    app.logger.info("GEMINI_API_KEY loaded successfully")
 else:
-    allowed_origins = [origin.strip() for origin in CORS_ORIGINS.split(",") if origin.strip()]
-    CORS(app, resources={r"/*": {"origins": allowed_origins}})
+    app.logger.error("GEMINI_API_KEY is missing!")
+
+if os.getenv("DEEPGRAM_API_KEY"):
+    app.logger.info("DEEPGRAM_API_KEY loaded successfully")
+else:
+    app.logger.error("DEEPGRAM_API_KEY is missing!")
+
+# Strict Production-Safe CORS
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000", "https://deceptra.vercel.app"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "max_age": 3600
+    }
+})
+
+@app.before_request
+def log_request_info():
+    if request.path.startswith("/analyze") and request.method != "OPTIONS":
+        app.logger.info(f"Incoming request: {request.method} {request.path}")
+
+@app.after_request
+def after_request(response):
+    # Using .set() instead of .add() to ensure we don't duplicate headers if flask-cors also adds them, which would break the browser.
+    response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin", "*"))
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+    response.headers.set("Access-Control-Allow-Credentials", "true")
+    return response
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "auth.db")
 DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
@@ -926,13 +965,19 @@ def update_settings():
     )
 
 
-@app.route("/analyze", methods=["POST"])
+@app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+        
     try:
         token = _extract_bearer_token()
-        user = _session_user(token)
-        if not user:
-            return jsonify({"error": "Unauthorized"}), 401
+        user = None
+        if token:
+            user = _session_user(token)
+            if not user:
+                app.logger.warning("Failed authorization: Invalid token provided")
+                return jsonify({"error": "Unauthorized"}), 401
 
         data = request.get_json(silent=True) or {}
         original_text = (data.get("message") or data.get("text") or "").strip()
@@ -1001,23 +1046,31 @@ def analyze():
         elif modality == "document":
             analysis["detected_source"] = "Uploaded Document"
 
-        _save_history_record(user["id"], original_message, analysis)
+        app.logger.info(f"Gemini response generated successfully for {modality} analysis.")
+
+        if user:
+            _save_history_record(user["id"], original_message, analysis)
 
         return jsonify(analysis), 200
     except json.JSONDecodeError:
         app.logger.exception("Gemini response JSON parsing failed; using fallback analysis")
         data = request.get_json(silent=True) or {}
         original_text = (data.get("message") or data.get("text") or "").strip()
+        
         token = _extract_bearer_token()
-        user = _session_user(token)
-        if not user:
-            return jsonify({"error": "Unauthorized"}), 401
+        user = None
+        if token:
+            user = _session_user(token)
+            if not user:
+                app.logger.warning("Failed authorization: Invalid token provided during fallback")
+                return jsonify({"error": "Unauthorized"}), 401
         detected = _detect_input_language(original_text)
         translated_to_english = detected["label"] != "English"
         normalized_text = _translate_to_english(original_text, detected["label"])
         analysis = _fallback_analysis(normalized_text or original_text)
         localized_analysis = _translate_analysis_for_ui(analysis, detected["label"])
-        _save_history_record(user["id"], original_text, analysis)
+        if user:
+            _save_history_record(user["id"], original_text, analysis)
         response_payload = {
             "detected_language": detected["label"],
             "translated_to_english": translated_to_english,
@@ -1031,40 +1084,23 @@ def analyze():
         return jsonify(response_payload), 200
     except Exception as exc:
         details = str(exc)
-        print(f"Gemini API error: {details}")
-        app.logger.exception("Gemini API request failed; using fallback analysis")
-        data = request.get_json(silent=True) or {}
-        original_text = (data.get("message") or data.get("text") or "").strip()
-        token = _extract_bearer_token()
+        app.logger.exception(f"Internal exception during analysis: {details}")
+        return jsonify({"error": "Internal Server Error", "details": details}), 500
+
+
+@app.route("/analyze/voice", methods=["POST", "OPTIONS"])
+@app.route("/analyze/audio", methods=["POST", "OPTIONS"])
+def analyze_voice():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+        
+    token = _extract_bearer_token()
+    user = None
+    if token:
         user = _session_user(token)
         if not user:
+            app.logger.warning("Failed authorization: Invalid token provided for audio")
             return jsonify({"error": "Unauthorized"}), 401
-        detected = _detect_input_language(original_text)
-        translated_to_english = detected["label"] != "English"
-        normalized_text = _translate_to_english(original_text, detected["label"])
-        analysis = _fallback_analysis(normalized_text or original_text)
-        localized_analysis = _translate_analysis_for_ui(analysis, detected["label"])
-        _save_history_record(user["id"], original_text, analysis)
-        response_payload = {
-            "detected_language": detected["label"],
-            "translated_to_english": translated_to_english,
-            "normalized_text": normalized_text or original_text,
-            "original_text": original_text,
-            "translated_text": normalized_text or original_text,
-            "analysis": localized_analysis,
-            "threat_highlights": localized_analysis.get("threat_highlights", []),
-        }
-        response_payload.update(localized_analysis)
-        return jsonify(response_payload), 200
-
-
-@app.route("/analyze/voice", methods=["POST"])
-@app.route("/analyze/audio", methods=["POST"])
-def analyze_voice():
-    token = _extract_bearer_token()
-    user = _session_user(token)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
 
     uploaded_file = request.files.get("file") or request.files.get("audio")
     if not uploaded_file or uploaded_file.filename == "":
@@ -1106,10 +1142,13 @@ def analyze_voice():
             }
         )
 
-        _save_history_record(user["id"], transcript or uploaded_file.filename, response_payload)
+        if user:
+            _save_history_record(user["id"], transcript or uploaded_file.filename, response_payload)
+            
+        app.logger.info(f"Voice analysis completed successfully. Transcript length: {len(transcript)}")
         return jsonify(response_payload), 200
     except Exception as exc:
-        app.logger.exception("Voice analysis failed")
+        app.logger.exception(f"Internal exception during voice analysis: {str(exc)}")
         return jsonify({"error": "Voice analysis failed", "details": str(exc)}), 500
     finally:
         if temp_path and os.path.exists(temp_path):

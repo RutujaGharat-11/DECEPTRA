@@ -52,12 +52,51 @@ load_dotenv()
 
 app = Flask(__name__)
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").strip()
-if CORS_ORIGINS == "*":
-    CORS(app)
+import logging
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+app.logger.setLevel(logging.INFO)
+
+app.logger.info("Starting up backend...")
+if os.getenv("GEMINI_API_KEY"):
+    app.logger.info("GEMINI_API_KEY loaded successfully")
 else:
-    allowed_origins = [origin.strip() for origin in CORS_ORIGINS.split(",") if origin.strip()]
-    CORS(app, resources={r"/*": {"origins": allowed_origins}})
+    app.logger.error("GEMINI_API_KEY is missing!")
+
+if os.getenv("DEEPGRAM_API_KEY"):
+    app.logger.info("DEEPGRAM_API_KEY loaded successfully")
+else:
+    app.logger.error("DEEPGRAM_API_KEY is missing!")
+
+# Strict Production-Safe CORS
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000", "https://deceptra.vercel.app"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+        "expose_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "max_age": 3600
+    }
+})
+
+@app.before_request
+def log_request_info():
+    if request.path.startswith("/analyze") and request.method != "OPTIONS":
+        app.logger.info(f"Incoming request: {request.method} {request.path}")
+
+@app.after_request
+def after_request(response):
+    # Using .set() instead of .add() to ensure we don't duplicate headers if flask-cors also adds them, which would break the browser.
+    response.headers.set("Access-Control-Allow-Origin", request.headers.get("Origin", "*"))
+    response.headers.set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+    response.headers.set("Access-Control-Allow-Credentials", "true")
+    return response
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "auth.db")
 DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
@@ -920,90 +959,115 @@ def update_settings():
     )
 
 
-@app.route("/analyze", methods=["POST"])
+@app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
-    token = _extract_bearer_token()
-    user = _session_user(token)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
 
-    data = request.get_json(silent=True) or {}
-    original_text = (data.get("message") or data.get("text") or "").strip()
+    try:
+        token = _extract_bearer_token()
+        user = None
+        if token:
+            user = _session_user(token)
+            if not user:
+                app.logger.warning("Failed authorization: Invalid token provided")
+                return jsonify({"error": "Unauthorized"}), 401
 
-    if not original_text:
-        return jsonify({"error": "Message is required"}), 400
+        data = request.get_json(silent=True) or {}
+        original_text = (data.get("message") or data.get("text") or "").strip()
 
-    analysis = process_text_pipeline(original_text)
-    
-    # Add modality awareness and findings
-    analysis["modality"] = data.get("modality", "text")
-    analysis["risk_findings"] = _get_risk_findings(analysis)
-    
-    if analysis["modality"] == "image":
-        analysis["detected_source"] = _detect_source_heuristics(original_text)
+        if not original_text:
+            return jsonify({"error": "Message is required"}), 400
 
-    _save_history_record(user["id"], original_text, analysis)
+        analysis = process_text_pipeline(original_text)
+        
+        # Add modality awareness and findings
+        analysis["modality"] = data.get("modality", "text")
+        analysis["risk_findings"] = _get_risk_findings(analysis)
+        
+        if analysis["modality"] == "image":
+            analysis["detected_source"] = _detect_source_heuristics(original_text)
 
-    return jsonify(analysis), 200
+        app.logger.info(f"Gemini response generated successfully for {analysis['modality']} analysis.")
+
+        if user:
+            _save_history_record(user["id"], original_text, analysis)
+
+        return jsonify(analysis), 200
+    except Exception as exc:
+        details = str(exc)
+        app.logger.exception(f"Internal exception during analysis: {details}")
+        return jsonify({"error": "Internal Server Error", "details": details}), 500
 
 
-@app.route("/analyze/image", methods=["POST"])
+@app.route("/analyze/image", methods=["POST", "OPTIONS"])
 def analyze_image():
     """OCR/Image intelligence endpoint - uses CENTRALIZED threat vector engine."""
-    token = _extract_bearer_token()
-    user = _session_user(token)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
 
-    if "file" not in request.files:
-        return jsonify({"error": "File is required"}), 400
+    try:
+        token = _extract_bearer_token()
+        user = None
+        if token:
+            user = _session_user(token)
+            if not user:
+                app.logger.warning("Failed authorization: Invalid token provided for image")
+                return jsonify({"error": "Unauthorized"}), 401
 
-    uploaded_file = request.files["file"]
-    if not uploaded_file or uploaded_file.filename == "":
-        return jsonify({"error": "No file selected"}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "File is required"}), 400
 
-    # Process image through OCR pipeline
-    image_response = process_image_pipeline(uploaded_file)
+        uploaded_file = request.files["file"]
+        if not uploaded_file or uploaded_file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
 
-    # Extract threat vectors from nested analysis
-    analysis_data = image_response.get("analysis", {})
-    
-    # Build response with vectors at TOP LEVEL (matching text analysis schema)
-    # while preserving image-specific fields
-    response_payload = {
-        # Vector fields at TOP LEVEL (for frontend threat rendering)
-        "risk_level": analysis_data.get("risk_level", "LOW"),
-        "risk_color": analysis_data.get("risk_color", "blue"),
-        "confidence_score": analysis_data.get("confidence_score", 0),
-        "signals": analysis_data.get("signals", []),
-        "explanation": analysis_data.get("explanation", ""),
-        "urgency_level": analysis_data.get("urgency_level", 0),
-        "authority_claim": analysis_data.get("authority_claim", 0),
-        "emotional_pressure": analysis_data.get("emotional_pressure", 0),
-        "financial_request": analysis_data.get("financial_request", 0),
-        "safety_actions": analysis_data.get("safety_actions", []),
-        "threat_highlights": analysis_data.get("threat_highlights", []),
+        # Process image through OCR pipeline
+        image_response = process_image_pipeline(uploaded_file)
+
+        # Extract threat vectors from nested analysis
+        analysis_data = image_response.get("analysis", {})
         
-        # Image-specific fields (visual forensic intelligence)
-        "modality": "image",
-        "extracted_text": image_response.get("extracted_text", ""),
-        "detected_links": image_response.get("detected_links", []),
-        "qr_data": image_response.get("qr_data", []),
-        "platform_detected": image_response.get("platform_detected", "Unknown"),
-        "detected_source": _detect_source_heuristics(image_response.get("extracted_text", "")),
-        "risk_findings": _get_risk_findings(analysis_data),
-        "extraction_status": image_response.get("extraction_status", "no_text_detected"),
-    }
+        # Build response with vectors at TOP LEVEL (matching text analysis schema)
+        # while preserving image-specific fields
+        response_payload = {
+            # Vector fields at TOP LEVEL (for frontend threat rendering)
+            "risk_level": analysis_data.get("risk_level", "LOW"),
+            "risk_color": analysis_data.get("risk_color", "blue"),
+            "confidence_score": analysis_data.get("confidence_score", 0),
+            "signals": analysis_data.get("signals", []),
+            "explanation": analysis_data.get("explanation", ""),
+            "urgency_level": analysis_data.get("urgency_level", 0),
+            "authority_claim": analysis_data.get("authority_claim", 0),
+            "emotional_pressure": analysis_data.get("emotional_pressure", 0),
+            "financial_request": analysis_data.get("financial_request", 0),
+            "safety_actions": analysis_data.get("safety_actions", []),
+            "threat_highlights": analysis_data.get("threat_highlights", []),
+            
+            # Image-specific fields (visual forensic intelligence)
+            "modality": "image",
+            "extracted_text": image_response.get("extracted_text", ""),
+            "detected_links": image_response.get("detected_links", []),
+            "qr_data": image_response.get("qr_data", []),
+            "platform_detected": image_response.get("platform_detected", "Unknown"),
+            "detected_source": _detect_source_heuristics(image_response.get("extracted_text", "")),
+            "risk_findings": _get_risk_findings(analysis_data),
+            "extraction_status": image_response.get("extraction_status", "no_text_detected"),
+        }
 
-    # Debug: print final response schema
-    print(f"[DEBUG /analyze/image] CENTRALIZED vectors - urgency: {response_payload['urgency_level']}, authority: {response_payload['authority_claim']}, emotional: {response_payload['emotional_pressure']}, financial: {response_payload['financial_request']}")
-
-    # Save to history using extracted text as source
-    extracted_text = image_response.get("extracted_text", "[Image uploaded for analysis]")
-    _save_history_record(user["id"], extracted_text, response_payload)
-
-    return jsonify(response_payload), 200
-
+        # Debug: print final response schema
+        print(f"[DEBUG /analyze/image] CENTRALIZED vectors - urgency: {response_payload['urgency_level']}, authority: {response_payload['authority_claim']}, emotional: {response_payload['emotional_pressure']}, financial: {response_payload['financial_request']}")
+        
+        app.logger.info(f"Image analysis completed successfully. Extracted text length: {len(response_payload['extracted_text'])}")
+        
+        if user:
+            _save_history_record(user["id"], f"Image Scan: {uploaded_file.filename}", response_payload)
+            
+        return jsonify(response_payload), 200
+    except Exception as exc:
+        details = str(exc)
+        app.logger.exception(f"Internal exception during image analysis: {details}")
+        return jsonify({"error": "Internal Server Error", "details": details}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
