@@ -61,7 +61,11 @@ logging.basicConfig(
 )
 app.logger.setLevel(logging.INFO)
 
-app.logger.info("Starting up backend...")
+# Limit upload size to 20 MB to prevent Railway worker OOM crashes
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
+
+_startup_port = int(os.environ.get("PORT", 5000))
+app.logger.info(f"Starting up backend on port {_startup_port}...")
 if os.getenv("GEMINI_API_KEY"):
     app.logger.info("GEMINI_API_KEY loaded successfully")
 else:
@@ -1169,4 +1173,5 @@ def analyze_voice():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    app.logger.info(f"Flask dev server starting on 0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port)
