@@ -16,3 +16,16 @@ __pycache__/
 .vscode/
 *.tsbuildinfo
 auth.db
+
+# Sensitive files and keys
+*.pem
+*.key
+*.cert
+*.crt
+secrets.json
+credentials.json
+client_secret.json
+*.p12
+*.pfx
+.npmrc
+.pypirc

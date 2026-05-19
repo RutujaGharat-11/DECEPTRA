@@ -967,11 +967,10 @@ def analyze():
     try:
         token = _extract_bearer_token()
         user = None
-        if token:
+        if token and token not in ["null", "undefined"]:
             user = _session_user(token)
             if not user:
-                app.logger.warning("Failed authorization: Invalid token provided")
-                return jsonify({"error": "Unauthorized"}), 401
+                app.logger.warning(f"Invalid token '{token}' provided, proceeding as anonymous user.")
 
         data = request.get_json(silent=True) or {}
         original_text = (data.get("message") or data.get("text") or "").strip()
@@ -1009,11 +1008,10 @@ def analyze_image():
     try:
         token = _extract_bearer_token()
         user = None
-        if token:
+        if token and token not in ["null", "undefined"]:
             user = _session_user(token)
             if not user:
-                app.logger.warning("Failed authorization: Invalid token provided for image")
-                return jsonify({"error": "Unauthorized"}), 401
+                app.logger.warning(f"Invalid token '{token}' provided for image, proceeding as anonymous.")
 
         if "file" not in request.files:
             return jsonify({"error": "File is required"}), 400

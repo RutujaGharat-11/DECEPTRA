@@ -12,8 +12,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Keep startup resilient; the Flask route still falls back cleanly when this is missing.
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash") if GEMINI_API_KEY else None
-MODEL_NAME = "gemini-1.5-flash"
+model_name_env = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+model = genai.GenerativeModel(model_name_env) if GEMINI_API_KEY else None
+MODEL_NAME = model_name_env
 
 
 def _detect_language(text):

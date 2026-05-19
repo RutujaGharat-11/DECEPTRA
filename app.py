@@ -973,11 +973,11 @@ def analyze():
     try:
         token = _extract_bearer_token()
         user = None
-        if token:
+        if token and token not in ["null", "undefined"]:
             user = _session_user(token)
             if not user:
-                app.logger.warning("Failed authorization: Invalid token provided")
-                return jsonify({"error": "Unauthorized"}), 401
+                app.logger.warning(f"Invalid token '{token}' provided, proceeding as anonymous user.")
+                # We do NOT return 401 here to allow public scans to continue seamlessly.
 
         data = request.get_json(silent=True) or {}
         original_text = (data.get("message") or data.get("text") or "").strip()
@@ -1059,11 +1059,10 @@ def analyze():
         
         token = _extract_bearer_token()
         user = None
-        if token:
+        if token and token not in ["null", "undefined"]:
             user = _session_user(token)
             if not user:
-                app.logger.warning("Failed authorization: Invalid token provided during fallback")
-                return jsonify({"error": "Unauthorized"}), 401
+                app.logger.warning(f"Invalid token '{token}' provided during fallback, proceeding as anonymous.")
         detected = _detect_input_language(original_text)
         translated_to_english = detected["label"] != "English"
         normalized_text = _translate_to_english(original_text, detected["label"])
@@ -1096,11 +1095,10 @@ def analyze_voice():
         
     token = _extract_bearer_token()
     user = None
-    if token:
+    if token and token not in ["null", "undefined"]:
         user = _session_user(token)
         if not user:
-            app.logger.warning("Failed authorization: Invalid token provided for audio")
-            return jsonify({"error": "Unauthorized"}), 401
+            app.logger.warning(f"Invalid token '{token}' provided for audio, proceeding as anonymous.")
 
     uploaded_file = request.files.get("file") or request.files.get("audio")
     if not uploaded_file or uploaded_file.filename == "":
