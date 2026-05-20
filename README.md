@@ -26,6 +26,18 @@ DECEPTRA combines OCR, AI-based threat analysis, document parsing, and audio int
 - Gemini AI
 - Deepgram
 - Tesseract.js
+---
+## Dashboard
+
+![Dashboard](Screenshots/Dashboard.png)
+
+---
+
+## Threat Analysis Report
+
+![Report](Screenshots/Reports.png)
+
+---
 
 
 
