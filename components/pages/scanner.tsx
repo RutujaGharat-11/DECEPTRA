@@ -8,8 +8,6 @@ import {
   AlertCircle,
   Landmark,
   Loader2,
-  Siren,
-  Wallet,
   ShieldAlert,
   ShieldCheck,
   Ban,
@@ -31,7 +29,6 @@ import {
   Lock,
   Database,
   Crosshair,
-  Search,
   Link,
   ExternalLink
 } from 'lucide-react';
@@ -369,6 +366,7 @@ type AnalysisResult = {
   qr_risk?: string;
   modality?: 'text' | 'image' | 'document' | 'audio';
   threat_highlights?: { snippet: string; explanation: string }[];
+  transcript?: string;
 };
 
 type InputMode = 'text' | 'image' | 'document' | 'audio';
@@ -399,6 +397,7 @@ export function Scanner() {
   const [lastScanTime, setLastScanTime] = useState<string>('');
   const logContainerRef = useRef<HTMLDivElement>(null);
   const nextLogId = useRef(0);
+  const [isTranscriptExpanded, setIsTranscriptExpanded] = useState(false);
 
   // Multi-modal state
   const [inputMode, setInputMode] = useState<InputMode>('text');
@@ -698,6 +697,7 @@ export function Scanner() {
   const explanation = analysis?.explanation ?? '';
   const threatHighlights = analysis?.threat_highlights || (analysis as any)?.analysis?.threat_highlights || [];
   const showThreatHighlights = ['MEDIUM', 'HIGH', 'CRITICAL'].includes(riskLevel.toUpperCase());
+  const reportTranscript = (analysis?.transcript || analysis?.original_text || analysis?.extracted_text || message || '').trim();
 
   const riskStyles: Record<string, any> = {
     LOW: { label: (detectedSignals.includes('transcription_failed') || detectedSignals.includes('analysis_incomplete')) ? 'Incomplete' : 'Safe', color: 'text-blue-400', border: 'border-blue-500/30', bg: 'bg-blue-500/10', bar: 'bg-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', Icon: ShieldCheck },
@@ -1123,48 +1123,15 @@ export function Scanner() {
                     {/* 1. IMAGE OCR MODE PANELS */}
                     {(inputMode === 'image' || analysis.modality === 'image') && (
                       <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
-                        {/* Execution Summary Card */}
                         <div className="p-4 bg-[#030B1C]/50 border border-[#00D4FF]/20 rounded-xl shadow-[0_0_15px_rgba(0,212,255,0.05)]">
                           <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
-                            <Cpu className="w-3 h-3" /> Execution Summary
+                            <Activity className="w-3 h-3" /> Executive Summary
                           </h4>
                           <p className="text-[11px] text-white/90 leading-relaxed font-medium">
-                            {explanation || "This screenshot appears suspicious due to urgency tactics and external links."}
+                            {explanation || 'This image report is flagged by the threat vector engine.'}
                           </p>
                         </div>
 
-                        {/* Detected Source Card */}
-                        {(() => {
-                          const inferSource = (text?: string) => {
-                            if (!text) return null;
-                            const t = text.toLowerCase();
-                            if (t.includes('whatsapp')) return 'WhatsApp';
-                            if (t.includes('gmail') || (t.includes('inbox') && t.includes('compose'))) return 'Gmail';
-                            if (t.includes('linkedin') || t.includes('connections')) return 'LinkedIn';
-                            if (t.includes('telegram')) return 'Telegram';
-                            if (t.includes('instagram') || t.includes('reels')) return 'Instagram';
-                            if (t.includes('facebook') || t.includes('messenger')) return 'Facebook';
-                            return null;
-                          };
-                          const sourceName = analysis.detected_source || analysis.platform_detected || inferSource(analysis.extracted_text) || inferSource(message);
-                          if (!sourceName) return null;
-
-                          return (
-                            <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl relative overflow-hidden group shadow-[0_0_15px_rgba(59,130,246,0.05)]">
-                              <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                                <ImageIcon className="w-12 h-12" />
-                              </div>
-                              <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
-                                <Search className="w-3 h-3" /> Detected Source
-                              </h4>
-                              <span className="text-lg font-bold text-white tracking-tight">
-                                {sourceName}
-                              </span>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Why This Is Risky Section */}
                         {(riskLevel === 'MEDIUM' || riskLevel === 'HIGH') && (
                           <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl shadow-[0_0_15px_rgba(239,68,68,0.05)]">
                             <h4 className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -1173,17 +1140,16 @@ export function Scanner() {
                             <div className="space-y-2">
                               {(() => {
                                 const reasons: string[] = [];
-                                if ((analysis.urgency_level || 0) > 30) reasons.push("Uses urgency tactics to create pressure");
-                                if (analysis.detected_links && analysis.detected_links.length > 0) reasons.push("Contains unverified or suspicious external links");
-                                if ((analysis.financial_request || 0) > 30) reasons.push("Asks for financial action or payment");
-                                if ((analysis.authority_claim || 0) > 30) reasons.push("Impersonates an authority figure");
+                                if ((analysis.urgency_level || 0) > 30) reasons.push('Uses urgency tactics to create pressure');
+                                if ((analysis.authority_claim || 0) > 30) reasons.push('Impersonates an authority figure');
+                                if ((analysis.emotional_pressure || 0) > 30) reasons.push('Applies emotional pressure or manipulation');
+                                if ((analysis.financial_request || 0) > 30) reasons.push('Contains financial requests or payment instructions');
 
                                 const allFindings = [...(analysis.indicators || []), ...(analysis.signals || []), ...(analysis.risk_findings || [])].join(' ').toLowerCase();
-                                if (allFindings.includes('qr') || analysis.qr_detected) reasons.push("Uses a QR code to hide the real destination");
-                                if (allFindings.includes('phish') || allFindings.includes('impersonat') || allFindings.includes('fake')) reasons.push("Shows strong signs of being a phishing attempt");
-                                if (allFindings.includes('scam') || allFindings.includes('fraud')) reasons.push("Matches known scam patterns");
+                                if (allFindings.includes('scam') || allFindings.includes('fraud') || allFindings.includes('phishing')) reasons.push('Matches known scam patterns');
+                                if (allFindings.includes('qr') || analysis.qr_detected) reasons.push('Uses a QR code to hide the real destination');
 
-                                if (reasons.length === 0) reasons.push("Displays unusual formatting or suspicious requests");
+                                if (reasons.length === 0) reasons.push('Suspicious anomalies identified in image structure and content.');
 
                                 return Array.from(new Set(reasons)).map((reason, idx) => (
                                   <div key={idx} className="flex items-start gap-2 text-[11px] text-white/90">
@@ -1196,7 +1162,6 @@ export function Scanner() {
                           </div>
                         )}
 
-                        {/* 3. Threat Highlights Section (Image OCR) */}
                         {showThreatHighlights && (
                           <div className="p-4 bg-[#00D4FF]/5 border border-[#00D4FF]/20 rounded-xl shadow-[0_0_15px_rgba(0,212,255,0.05)]">
                             <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -1219,162 +1184,62 @@ export function Scanner() {
                               </div>
                             ) : (
                               <div className="flex items-center justify-center p-4 bg-[#060B18]/40 border border-white/5 rounded-lg border-dashed">
-                                  {status === 'scanning' ? (
-                                    <span className="text-[10px] text-[#00D4FF]/60 italic font-mono flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00D4FF]/40 animate-pulse" />
-                                      Analyzing suspicious conversation signals...
-                                    </span>
-                                  ) : (
-                                    <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
-                                      <div className="flex items-start gap-2">
-                                        <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
-                                        <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in image structure."</span>
-                                      </div>
-                                      <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
-                                        <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
-                                        {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
-                                      </div>
-                                    </div>
-                                  )}
+                                <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
+                                  <div className="flex items-start gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
+                                    <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in image structure."</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
+                                    <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
+                                    {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
                         )}
-
-                        {/* Detected Links Section (Image OCR) */}
-                        {analysis.detected_links && analysis.detected_links.length > 0 && (
-                          <div className="p-4 bg-[#030B1C]/50 border border-cyan-500/30 rounded-xl">
-                            <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                              <Link className="w-4 h-4" />
-                              Detected Links Analysis
-                            </h4>
-                            <div className="space-y-3">
-                              {analysis.detected_links.map((link, idx) => (
-                                <div key={idx} className="p-3 bg-[#060B18] border border-cyan-500/20 rounded-lg">
-                                  <div className="flex items-start justify-between gap-2 mb-2">
-                                    <code className="text-[11px] text-blue-400 break-all font-mono">{link.url}</code>
-                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded whitespace-nowrap ${link.risk === 'high' ? 'text-red-300 bg-red-900/30' : link.risk === 'medium' ? 'text-yellow-300 bg-yellow-900/30' : 'text-green-300 bg-green-900/30'}`}>
-                                      {link.risk.toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-white/70 leading-relaxed">{link.reason}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* QR Findings Section */}
-                        {(analysis.detected_qr_data || analysis.qr_detected) && (
-                          <div className="p-4 bg-[#030B1C]/50 border border-purple-500/20 rounded-xl shadow-[0_0_15px_rgba(168,85,247,0.05)]">
-                            <h4 className="text-[9px] font-black text-purple-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                              <Zap className="w-3 h-3" /> QR Intelligence
-                            </h4>
-                            {(() => {
-                              const qrText = analysis.qr_payload || (analysis.detected_qr_data && analysis.detected_qr_data[0]) || "Encrypted/Invalid QR Data";
-                              const riskStatus = analysis.qr_risk || 'high'; // Scams often use QRs, default to high if undefined
-                              const isSafe = riskStatus.toLowerCase() === 'safe' || riskStatus.toLowerCase() === 'low';
-                              const badgeColor = isSafe ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 shadow-[0_0_8px_rgba(16,185,129,0.2)]' : 'text-red-400 bg-red-500/10 border-red-500/30 shadow-[0_0_8px_rgba(239,68,68,0.2)]';
-
-                              return (
-                                <div className="flex flex-col gap-3 p-3 bg-[#060B18]/80 border border-white/5 rounded-lg group hover:border-purple-500/30 transition-all">
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="font-mono text-[10px] text-purple-200 break-all leading-relaxed">
-                                      {qrText}
-                                    </div>
-                                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded border shrink-0 ${badgeColor}`}>
-                                      {isSafe ? 'SAFE QR' : 'SUSPICIOUS QR'}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        )}
-                       
                       </div>
                     )}
                     {/* 2. DOCUMENT MODE PANELS */}
                     {analysis.modality === 'document' && (
-                      <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
-                        
-                        {/* Document Identity */}
-                        <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-xl relative overflow-hidden group shadow-[0_0_15px_rgba(59,130,246,0.05)]">
-                          <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Fingerprint className="w-12 h-12" />
-                          </div>
-                          <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
-                            <Search className="w-3 h-3" /> Document Identity
-                          </h4>
-                          <span className="text-lg font-bold text-white tracking-tight">
-                            {analysis.document_type || inferDocumentIdentity(analysis.extracted_text || message)}
-                          </span>
+                      <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-500">
+                        <div className="flex flex-col gap-4">
+                          <h3 className="text-[10px] font-bold text-[#00D4FF] tracking-widest uppercase border-b border-[#1e3a8a]/50 pb-1">Executive Summary</h3>
+                          <p className="text-[11px] text-white/80 leading-relaxed font-medium">
+                            {explanation || 'Document analysis completed. Review the threat vectors below for the final assessment.'}
+                          </p>
                         </div>
 
-                        {/* Financial / Payment Indicators */}
-                        {hasFinancialIndicators(analysis.extracted_text || message) && (
-                          <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl shadow-[0_0_15px_rgba(245,158,11,0.05)]">
-                            <h4 className="text-[9px] font-black text-amber-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                              <Wallet className="w-3 h-3" /> Financial / Payment Indicators
+                        {(riskLevel === 'MEDIUM' || riskLevel === 'HIGH') && (
+                          <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl shadow-[0_0_15px_rgba(239,68,68,0.05)]">
+                            <h4 className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                              <AlertCircle className="w-3 h-3" /> Why This Is Risky
                             </h4>
-                            <div className="flex flex-wrap gap-2">
-                              { (analysis.extracted_text || message || "").toLowerCase().includes('upi') && (
-                                <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] text-amber-400 font-black uppercase tracking-wider">UPI Request Detected</span>
-                              )}
-                              { (analysis.extracted_text || message || "").toLowerCase().includes('bank') && (
-                                <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] text-amber-400 font-black uppercase tracking-wider">Bank Details Found</span>
-                              )}
-                              { (analysis.extracted_text || message || "").toLowerCase().includes('fee') && (
-                                <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] text-amber-400 font-black uppercase tracking-wider">Payment Instructions</span>
-                              )}
-                              { (analysis.extracted_text || message || "").toLowerCase().includes('transaction') && (
-                                <span className="px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 rounded text-[9px] text-amber-400 font-black uppercase tracking-wider">Transfer Records</span>
-                              )}
-                            </div>
-                            <p className="mt-3 text-[10px] text-amber-400/70 font-medium leading-relaxed italic">
-                              * Neural engine detected active financial instructions within the document structure.
-                            </p>
-                          </div>
-                        )}
+                            <div className="space-y-2">
+                              {(() => {
+                                const reasons: string[] = [];
+                                if ((analysis.urgency_level || 0) > 30) reasons.push('Uses urgency tactics to create pressure');
+                                if ((analysis.authority_claim || 0) > 30) reasons.push('Impersonates an authority figure');
+                                if ((analysis.emotional_pressure || 0) > 30) reasons.push('Applies emotional pressure or manipulation');
+                                if ((analysis.financial_request || 0) > 30) reasons.push('Contains financial requests or payment instructions');
 
-                        {/* Document Metadata */}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="p-3 bg-[#030B1C]/50 border border-[#1e3a8a]/30 rounded-lg group hover:border-[#00D4FF]/40 transition-colors">
-                            <span className="text-[8px] text-white/40 uppercase tracking-widest block mb-1">Source Name</span>
-                            <span className="text-[10px] font-bold text-white truncate block">{selectedFile?.name || "unnamed_source.pdf"}</span>
-                          </div>
-                          <div className="p-3 bg-[#030B1C]/50 border border-[#1e3a8a]/30 rounded-lg group hover:border-[#00D4FF]/40 transition-colors">
-                            <span className="text-[8px] text-white/40 uppercase tracking-widest block mb-1">MIME Type</span>
-                            <span className="text-[10px] font-bold text-white uppercase">{selectedFile?.type?.split('/')[1] || "DOC_STREAM"}</span>
-                          </div>
-                          <div className="p-3 bg-[#030B1C]/50 border border-[#1e3a8a]/30 rounded-lg group hover:border-[#00D4FF]/40 transition-colors">
-                            <span className="text-[8px] text-white/40 uppercase tracking-widest block mb-1">Volume Analysis</span>
-                            <span className="text-[10px] font-bold text-white">1 Page (Standard)</span>
-                          </div>
-                          <div className="p-3 bg-[#030B1C]/50 border border-[#1e3a8a]/30 rounded-lg group hover:border-[#00D4FF]/40 transition-colors">
-                            <span className="text-[8px] text-white/40 uppercase tracking-widest block mb-1">Linguistic Profile</span>
-                            <span className="text-[10px] font-bold text-white">{detectLanguage(analysis.extracted_text || message)}</span>
-                          </div>
-                        </div>
+                                const allFindings = [...(analysis.indicators || []), ...(analysis.signals || []), ...(analysis.risk_findings || [])].join(' ').toLowerCase();
+                                if (allFindings.includes('scam') || allFindings.includes('fraud') || allFindings.includes('phishing')) reasons.push('Matches known scam patterns');
+                                if (allFindings.includes('document') || allFindings.includes('forg') || allFindings.includes('fake')) reasons.push('Shows signs of document manipulation or forgery');
 
-                        {/* Risk Findings */}
-                        {analysis.risk_findings && analysis.risk_findings.length > 0 && (
-                          <div className="space-y-3">
-                            <h4 className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                              <ShieldAlert className="w-3 h-3" /> Risk Analysis findings
-                            </h4>
-                            <div className="grid grid-cols-1 gap-2">
-                              {analysis.risk_findings.map((finding, idx) => (
-                                <div key={idx} className="px-3 py-2 bg-red-500/5 border border-red-500/10 rounded-lg text-[11px] text-white/90 flex items-center gap-3">
-                                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                                  {finding}
-                                </div>
-                              ))}
+                                if (reasons.length === 0) reasons.push('Suspicious anomalies identified in document structure and content.');
+
+                                return Array.from(new Set(reasons)).map((reason, idx) => (
+                                  <div key={idx} className="flex items-start gap-2 text-[11px] text-white/90">
+                                    <div className="w-1 h-1 rounded-full bg-red-400 mt-1.5 shrink-0 shadow-[0_0_8px_rgba(248,113,113,0.8)]" />
+                                    <span>{reason}</span>
+                                  </div>
+                                ));
+                              })()}
                             </div>
                           </div>
                         )}
 
-                        {/* 3. Threat Highlights Section (Document Parse) */}
                         {showThreatHighlights && (
                           <div className="p-4 bg-[#00D4FF]/5 border border-[#00D4FF]/20 rounded-xl shadow-[0_0_15px_rgba(0,212,255,0.05)]">
                             <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -1397,77 +1262,20 @@ export function Scanner() {
                               </div>
                             ) : (
                               <div className="flex items-center justify-center p-4 bg-[#060B18]/40 border border-white/5 rounded-lg border-dashed">
-                                  {status === 'scanning' ? (
-                                    <span className="text-[10px] text-[#00D4FF]/60 italic font-mono flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00D4FF]/40 animate-pulse" />
-                                      Analyzing suspicious document patterns...
-                                    </span>
-                                  ) : (
-                                    <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
-                                      <div className="flex items-start gap-2">
-                                        <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
-                                        <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in document structure."</span>
-                                      </div>
-                                      <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
-                                        <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
-                                        {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
-                                      </div>
-                                    </div>
-                                  )}
+                                <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
+                                  <div className="flex items-start gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
+                                    <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in document structure."</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
+                                    <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
+                                    {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
                         )}
-
-                        {/* Detected Links Section */}
-                        {analysis.detected_links && analysis.detected_links.length > 0 && (
-                          <div className="p-4 bg-[#030B1C]/50 border border-cyan-500/30 rounded-xl shadow-[0_0_15px_rgba(6,182,212,0.05)]">
-                            <h4 className="text-xs font-bold text-cyan-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                              <Link className="w-4 h-4" />
-                              Detected Links Analysis
-                            </h4>
-                            <div className="space-y-3">
-                              {analysis.detected_links.map((link, idx) => (
-                                <div key={idx} className="p-3 bg-[#060B18] border border-cyan-500/20 rounded-lg hover:border-cyan-500/40 transition-colors">
-                                  <div className="flex items-start justify-between gap-2 mb-2">
-                                    <code className="text-[11px] text-blue-400 break-all font-mono">{link.url}</code>
-                                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded whitespace-nowrap ${link.risk === 'high' ? 'text-red-300 bg-red-900/30' : link.risk === 'medium' ? 'text-yellow-300 bg-yellow-900/30' : 'text-green-300 bg-green-900/30'}`}>
-                                      {link.risk.toUpperCase()}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-white/70 leading-relaxed">{link.reason}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Better Extracted Transcript UI */}
-                        <div className="space-y-3">
-                          <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] flex items-center gap-2">
-                            <Terminal className="w-3 h-3" /> Forensic Document Transcript
-                          </h4>
-                          <div className="relative group">
-                            <div className="absolute -inset-0.5 bg-gradient-to-b from-[#1e3a8a]/20 to-transparent rounded-xl opacity-50 group-hover:opacity-100 transition-opacity" />
-                            <div className="relative p-4 bg-[#020813]/80 border border-[#1e3a8a]/40 rounded-xl text-[11px] font-mono text-[#00FF66]/70 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar shadow-inner backdrop-blur-sm">
-                              <div className="flex flex-col gap-1">
-                                {(analysis.extracted_text || (message && !message.includes('[Document:') ? message : "") || "").split('\n').filter(l => l.trim()).map((line, i) => (
-                                  <div key={i} className="flex gap-4 group/line">
-                                    <span className="text-white/10 select-none w-6 text-right shrink-0 font-mono">{String(i + 1).padStart(2, '0')}</span>
-                                    <span className="group-hover/line:text-[#00FF66] transition-colors">{line}</span>
-                                  </div>
-                                ))}
-                                {!(analysis.extracted_text || (message && !message.includes('[Document:') ? message : "")) && (
-                                  <div className="flex flex-col items-center justify-center py-8 opacity-30 gap-2">
-                                    <Ban className="w-8 h-8" />
-                                    <span className="text-[10px] uppercase tracking-widest">No valid text payload recovered</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
                       </div>
                     )}
 
@@ -1546,23 +1354,16 @@ export function Scanner() {
                               </div>
                             ) : (
                               <div className="flex items-center justify-center p-4 bg-[#060B18]/40 border border-white/5 rounded-lg border-dashed">
-                                  {status === 'scanning' ? (
-                                    <span className="text-[10px] text-[#00D4FF]/60 italic font-mono flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00D4FF]/40 animate-pulse" />
-                                      Analyzing linguistic threat indicators...
-                                    </span>
-                                  ) : (
-                                    <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
-                                      <div className="flex items-start gap-2">
-                                        <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
-                                        <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in message structure."</span>
-                                      </div>
-                                      <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
-                                        <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
-                                        {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
-                                      </div>
-                                    </div>
-                                  )}
+                                <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
+                                  <div className="flex items-start gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
+                                    <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in message structure."</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
+                                    <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
+                                    {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1595,7 +1396,40 @@ export function Scanner() {
                     {/* 4. AUDIO / CALL RECORDING MODE */}
                     {(inputMode === 'audio' || analysis.modality === 'audio') && (
                       <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
-                        {/* 1. Executive Summary */}
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2 text-[10px] font-black text-[#00D4FF] uppercase tracking-[0.2em]">
+                            <Terminal className="w-3.5 h-3.5 text-[#00D4FF]" /> Payload Source
+                          </div>
+                          <div className="bg-[#060B18]/80 border border-[#00D4FF]/20 rounded-xl p-5 min-h-[160px] flex flex-col justify-between shadow-inner relative overflow-hidden transition-all group">
+                            <div className="absolute inset-0 bg-scanline pointer-events-none opacity-[0.03]" />
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-[9px] font-bold text-emerald-400 font-mono tracking-widest uppercase flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                CALL_RECORDING_TRANSCRIPT_READY
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsTranscriptExpanded((value) => !value)}
+                                className="text-[8px] font-bold text-[#00D4FF]/60 uppercase tracking-widest font-mono bg-[#00D4FF]/10 px-2 py-0.5 rounded border border-[#00D4FF]/20 group-hover:text-[#00D4FF] group-hover:border-[#00D4FF]/40 transition-colors"
+                              >
+                                {isTranscriptExpanded ? 'Collapse Feed' : 'Expand Feed'}
+                              </button>
+                            </div>
+
+                            <div className="flex-1 my-2.5 flex items-center">
+                              <p className="text-[12.5px] text-white/70 leading-relaxed font-mono line-clamp-3 w-full">
+                                {reportTranscript || 'No transcript recovered.'}
+                              </p>
+                            </div>
+
+                            {isTranscriptExpanded && (
+                              <div className="mt-1 rounded-lg border border-white/5 bg-black/30 p-4 text-[11px] font-mono text-emerald-400/90 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar whitespace-pre-wrap break-words">
+                                {reportTranscript || 'No transcript recovered.'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
                         <div className="flex flex-col gap-4">
                           <h3 className="text-[10px] font-bold text-[#00D4FF] tracking-widest uppercase border-b border-[#1e3a8a]/50 pb-1">Executive Summary</h3>
                           <p className="text-[11px] text-white/80 leading-relaxed font-medium">
@@ -1603,7 +1437,6 @@ export function Scanner() {
                           </p>
                         </div>
 
-                        {/* 2. Why Is This Risky */}
                         {(riskLevel === 'MEDIUM' || riskLevel === 'HIGH') && (
                           <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl shadow-[0_0_15px_rgba(239,68,68,0.05)]">
                             <h4 className="text-[9px] font-black text-red-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -1612,16 +1445,16 @@ export function Scanner() {
                             <div className="space-y-2">
                               {(() => {
                                 const reasons: string[] = [];
-                                if ((analysis.urgency_level || 0) > 30) reasons.push("The caller uses urgency to pressure immediate action.");
-                                if ((analysis.authority_claim || 0) > 30) reasons.push("The caller attempts to fake authority or impersonate an organization.");
-                                if ((analysis.emotional_pressure || 0) > 30) reasons.push("The caller applies emotional or recruitment pressure.");
-                                if ((analysis.financial_request || 0) > 30) reasons.push("The caller asks for financial information, money, or promises unrealistic rewards.");
-                                
+                                if ((analysis.urgency_level || 0) > 30) reasons.push('The caller uses urgency to pressure immediate action.');
+                                if ((analysis.authority_claim || 0) > 30) reasons.push('The caller attempts to fake authority or impersonate an organization.');
+                                if ((analysis.emotional_pressure || 0) > 30) reasons.push('The caller applies emotional or recruitment pressure.');
+                                if ((analysis.financial_request || 0) > 30) reasons.push('The caller asks for financial information, money, or promises unrealistic rewards.');
+
                                 const allFindings = [...(analysis.indicators || []), ...(analysis.signals || []), ...(analysis.risk_findings || [])].join(' ').toLowerCase();
-                                if (allFindings.includes('scam') || allFindings.includes('fraud') || allFindings.includes('phishing')) reasons.push("The conversation matches known scam scripts.");
-                                
-                                if (reasons.length === 0) reasons.push("The caller exhibits manipulative or suspicious conversational patterns.");
-                                
+                                if (allFindings.includes('scam') || allFindings.includes('fraud') || allFindings.includes('phishing')) reasons.push('The conversation matches known scam scripts.');
+
+                                if (reasons.length === 0) reasons.push('The caller exhibits manipulative or suspicious conversational patterns.');
+
                                 return Array.from(new Set(reasons)).map((reason, idx) => (
                                   <div key={idx} className="flex items-start gap-2 text-[11px] text-white/90">
                                     <div className="w-1 h-1 rounded-full bg-red-400 mt-1.5 shrink-0 shadow-[0_0_8px_rgba(248,113,113,0.8)]" />
@@ -1633,7 +1466,6 @@ export function Scanner() {
                           </div>
                         )}
 
-                        {/* 3. Threat Highlights Section (Audio) */}
                         {showThreatHighlights && (
                           <div className="p-4 bg-[#00D4FF]/5 border border-[#00D4FF]/20 rounded-xl shadow-[0_0_15px_rgba(0,212,255,0.05)]">
                             <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -1656,61 +1488,20 @@ export function Scanner() {
                               </div>
                             ) : (
                               <div className="flex items-center justify-center p-4 bg-[#060B18]/40 border border-white/5 rounded-lg border-dashed">
-                                  {status === 'scanning' ? (
-                                    <span className="text-[10px] text-[#00D4FF]/60 italic font-mono flex items-center gap-2">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-[#00D4FF]/40 animate-pulse" />
-                                      Analyzing conversation for manipulative intent...
-                                    </span>
-                                  ) : (
-                                    <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
-                                      <div className="flex items-start gap-2">
-                                        <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
-                                        <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in audio transcription."</span>
-                                      </div>
-                                      <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
-                                        <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
-                                        {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
-                                      </div>
-                                    </div>
-                                  )}
+                                <div className="flex flex-col gap-1.5 w-full bg-[#060B18]/60 border border-white/5 rounded-lg group hover:border-[#00D4FF]/30 transition-all text-left">
+                                  <div className="flex items-start gap-2">
+                                    <div className="w-1 h-1 rounded-full bg-[#00D4FF] mt-1.5 shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
+                                    <span className="text-[11px] font-mono text-white/90 italic">"Contextual threat pattern identified in audio transcription."</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-[#00D4FF]/70 font-medium flex items-center gap-1.5">
+                                    <div className="w-2 h-[1px] bg-[#00D4FF]/30" />
+                                    {detectedSignals.length > 0 ? detectedSignals[0].replace(/_/g, ' ').toUpperCase() : 'COVERT THREAT'} DETECTED
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>
                         )}
-
-
-
-                        {/* 4. Transcript */}
-                        <div className="space-y-3">
-                          <h4 className="text-[9px] font-black text-[#00D4FF] uppercase tracking-[0.2em] flex items-center gap-2">
-                            <Terminal className="w-3 h-3" /> Transcript
-                          </h4>
-                          <div className="relative group">
-                            <div className="absolute -inset-0.5 bg-gradient-to-b from-[#1e3a8a]/20 to-transparent rounded-xl opacity-50 group-hover:opacity-100 transition-opacity" />
-                            <div className="relative p-4 bg-[#020813]/80 border border-[#1e3a8a]/40 rounded-xl text-[11px] font-mono text-white/70 leading-relaxed max-h-64 overflow-y-auto custom-scrollbar shadow-inner backdrop-blur-sm">
-                              <div className="flex flex-col gap-2">
-                                {(() => {
-                                  const textToShow = analysis.extracted_text || analysis.original_text || message;
-                                  if (!textToShow || textToShow.trim() === '') {
-                                    return (
-                                      <div className="flex flex-col items-center justify-center py-8 opacity-30 gap-2">
-                                        <Ban className="w-8 h-8" />
-                                        <span className="text-[10px] uppercase tracking-widest">No transcript recovered</span>
-                                      </div>
-                                    );
-                                  }
-                                  return textToShow.split('\n').filter(l => l.trim()).map((line, i) => (
-                                    <div key={i} className="flex gap-4 group/line">
-                                      <span className="text-white/20 select-none w-6 text-right shrink-0 font-mono">{String(i + 1).padStart(2, '0')}</span>
-                                      <span className="group-hover/line:text-white transition-colors">{line}</span>
-                                    </div>
-                                  ));
-                                })()}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
                       </div>
                     )}
 
