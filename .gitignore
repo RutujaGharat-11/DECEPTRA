@@ -29,3 +29,5 @@ client_secret.json
 *.pfx
 .npmrc
 .pypirc
+# clerk configuration (can include secrets)
+/.clerk/

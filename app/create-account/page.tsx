@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { apiUrl } from '@/lib/api';
+import { useAuth } from '@clerk/nextjs';
+import { useSignUp } from '@clerk/nextjs/legacy';
 import Image from 'next/image';
 import { Orbitron } from 'next/font/google';
 import { User, Lock, Eye, EyeOff, ArrowRight, UserPlus } from 'lucide-react';
@@ -16,17 +17,24 @@ const orbitron = Orbitron({
 
 export default function CreateAccountPage() {
   const router = useRouter();
+  const { isLoaded, signUp, setActive } = useSignUp();
+  
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  const [pendingVerification, setPendingVerification] = useState(false);
+  const [code, setCode] = useState('');
+  
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!isLoaded) return;
     setError('');
 
     if (password !== confirmPassword) {
@@ -36,29 +44,56 @@ export default function CreateAccountPage() {
 
     setLoading(true);
     try {
-      const response = await fetch(apiUrl('/auth/register'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_name: fullName,
-          email,
-          password,
-          confirm_password: confirmPassword,
-        }),
+      const nameParts = fullName.trim().split(' ');
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' ');
+
+      await signUp.create({
+        emailAddress: email,
+        password,
+        firstName,
+        lastName,
       });
 
-      const data = (await response.json()) as { error?: string };
-
-      if (!response.ok) {
-        setError(data.error || 'Unable to create account');
-        return;
-      }
-
-      router.replace('/login');
-    } catch {
-      setError('Unable to reach server');
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setPendingVerification(true);
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage || 'Unable to create account');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerify = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded) return;
+    setError('');
+    setLoading(true);
+    try {
+      const completeSignUp = await signUp.attemptEmailAddressVerification({ code });
+      if (completeSignUp.status === 'complete') {
+        await setActive({ session: completeSignUp.createdSessionId });
+        router.replace('/');
+      } else {
+        setError('Verification incomplete');
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage || 'Invalid verification code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (!isLoaded) return;
+    setError('');
+    try {
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      // Clear error slightly and replace with a pseudo-success state or let it be blank,
+      // but showing a message helps. Since we only have `error` state, we'll use a hack to show a green message.
+      setError('Code sent! Check your inbox.');
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage || 'Unable to resend code');
     }
   };
 
@@ -459,17 +494,17 @@ export default function CreateAccountPage() {
                 </div>
                 
                 <span className="text-[9px] tracking-[0.25em] text-[#00d4ff] font-bold uppercase text-center block mt-2.5 select-none font-orbitron">
-                  Initialize Access Node
+                  {pendingVerification ? 'Verify Identity' : 'Initialize Access Node'}
                 </span>
                 
                 <h2 
                   className="text-lg sm:text-[21px] font-extrabold text-white tracking-[0.15em] uppercase text-center mt-0.5 select-none font-orbitron"
                 >
-                  Create Account
+                  {pendingVerification ? 'Enter OTP' : 'Create Account'}
                 </h2>
                 
                 <p className="text-[10px] text-[#94a3b8]/75 text-center mt-1 select-none font-medium">
-                  Set up your deception risk scanner profile
+                  {pendingVerification ? 'Enter the security code sent to your email' : 'Set up your deception risk scanner profile'}
                 </p>
                 
                 {/* Premium separation bar with glowing notch */}
@@ -478,10 +513,10 @@ export default function CreateAccountPage() {
                 </div>
               </div>
 
-              {/* Error Notification */}
+              {/* Error/Info Notification */}
               {error && (
-                <div className="text-[11px] bg-red-950/40 border border-red-500/30 text-red-400 p-2.5 rounded-xl flex items-center gap-2 select-none">
-                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 shrink-0 text-red-400" fill="none" stroke="currentColor" strokeWidth="2">
+                <div className={`text-[11px] p-2.5 rounded-xl flex items-center gap-2 select-none border ${error.includes('Code sent') ? 'bg-green-950/40 border-green-500/30 text-green-400' : 'bg-red-950/40 border-red-500/30 text-red-400'}`}>
+                  <svg viewBox="0 0 24 24" className={`w-3.5 h-3.5 shrink-0 ${error.includes('Code sent') ? 'text-green-400' : 'text-red-400'}`} fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="12" y1="8" x2="12" y2="12" />
                     <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -491,124 +526,166 @@ export default function CreateAccountPage() {
               )}
 
               {/* Account Initialization Form */}
-              <form onSubmit={handleSubmit} className="flex flex-col space-y-3">
-                
-                {/* Field: Full Name */}
-                <div className="flex flex-col gap-1 text-left">
-                  <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="fullName">
-                    Full Name
-                  </label>
-                  <div className="relative flex items-center">
-                    <User className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
-                    <input
-                      id="fullName"
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Enter your full name"
-                      required
-                      className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-4 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
-                    />
-                  </div>
-                </div>
+              {!pendingVerification ? (
+                <>
+                  <form onSubmit={handleSubmit} className="flex flex-col space-y-3">
+                    
+                    {/* Field: Full Name */}
+                    <div className="flex flex-col gap-1 text-left">
+                      <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="fullName">
+                        Full Name
+                      </label>
+                      <div className="relative flex items-center">
+                        <User className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                        <input
+                          id="fullName"
+                          type="text"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="Enter your full name"
+                          required
+                          className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-4 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
+                        />
+                      </div>
+                    </div>
 
-                {/* Field: Email */}
-                <div className="flex flex-col gap-1 text-left">
-                  <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="email">
-                    Email Address
-                  </label>
-                  <div className="relative flex items-center">
-                    <User className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
-                    <input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Enter your email"
-                      required
-                      className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-4 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
-                    />
-                  </div>
-                </div>
+                    {/* Field: Email */}
+                    <div className="flex flex-col gap-1 text-left">
+                      <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="email">
+                        Email Address
+                      </label>
+                      <div className="relative flex items-center">
+                        <User className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                        <input
+                          id="email"
+                          type="email"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          placeholder="Enter your email"
+                          required
+                          className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-4 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
+                        />
+                      </div>
+                    </div>
 
-                {/* Field: Password */}
-                <div className="flex flex-col gap-1 text-left">
-                  <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="password">
-                    Password
-                  </label>
-                  <div className="relative flex items-center">
-                    <Lock className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
-                    <input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Create secure password"
-                      required
-                      className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
-                    />
+                    {/* Field: Password */}
+                    <div className="flex flex-col gap-1 text-left">
+                      <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="password">
+                        Password
+                      </label>
+                      <div className="relative flex items-center">
+                        <Lock className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                        <input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Create secure password"
+                          required
+                          className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3.5 text-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors focus:outline-none"
+                        >
+                          {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Field: Confirm Password */}
+                    <div className="flex flex-col gap-1 text-left">
+                      <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="confirmPassword">
+                        Confirm Password
+                      </label>
+                      <div className="relative flex items-center">
+                        <Lock className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                        <input
+                          id="confirmPassword"
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Confirm secure password"
+                          required
+                          className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3.5 text-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors focus:outline-none"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Primary Button */}
                     <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 text-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors focus:outline-none"
+                      type="submit"
+                      disabled={loading}
+                      className="w-full relative mt-2 group select-none overflow-hidden rounded-xl border border-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 text-white font-bold tracking-[0.15em] text-[10px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 shadow-[0_0_12px_rgba(0,212,255,0.2)] hover:shadow-[0_0_20px_rgba(0,212,255,0.4)] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer font-orbitron"
                     >
-                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      <span>{loading ? "Creating Profile..." : "Create Secure Profile"}</span>
+                      <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform text-[#00d4ff]" />
+                    </button>
+                  </form>
+
+                  {/* Splitter Row */}
+                  <div className="relative w-full flex items-center justify-center select-none py-0.5 mt-3">
+                    <div className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-[#1e293b] to-transparent" />
+                    <span className="relative px-2.5 text-[8.5px] font-bold text-white/30 bg-[#030615] tracking-[0.18em] font-mono">OR</span>
+                  </div>
+
+                  {/* Secondary Button */}
+                  <button
+                    type="button"
+                    onClick={() => router.push('/login')}
+                    className="w-full relative mt-3 group select-none overflow-hidden rounded-xl border border-[#00d4ff]/35 hover:border-[#00d4ff]/70 bg-transparent text-[#00d4ff] hover:text-white font-bold tracking-[0.12em] text-[9.5px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer font-orbitron"
+                  >
+                    <span>Return to Secure Login</span>
+                    <UserPlus className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              ) : (
+                <form onSubmit={handleVerify} className="flex flex-col space-y-3">
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="code">
+                      Verification Code
+                    </label>
+                    <div className="relative flex items-center">
+                      <Lock className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                      <input
+                        id="code"
+                        type="text"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        placeholder="Enter the 6-digit code"
+                        required
+                        className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-4 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium tracking-[0.2em]"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between items-center text-[10px] font-medium pt-1 pb-1 px-1">
+                    <button type="button" onClick={() => setPendingVerification(false)} className="text-[#94a3b8] hover:text-white transition-colors cursor-pointer">
+                      Back to Registration
+                    </button>
+                    <button type="button" onClick={handleResendCode} className="text-[#00d4ff] hover:text-white transition-colors font-bold cursor-pointer">
+                      Resend Code
                     </button>
                   </div>
-                </div>
 
-                {/* Field: Confirm Password */}
-                <div className="flex flex-col gap-1 text-left">
-                  <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="confirmPassword">
-                    Confirm Password
-                  </label>
-                  <div className="relative flex items-center">
-                    <Lock className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
-                    <input
-                      id="confirmPassword"
-                      type={showConfirmPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm secure password"
-                      required
-                      className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3.5 text-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors focus:outline-none"
-                    >
-                      {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Primary Button matching visual reference: Cyan bordered dark blue glow capsule */}
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full relative mt-2 group select-none overflow-hidden rounded-xl border border-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 text-white font-bold tracking-[0.15em] text-[10px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 shadow-[0_0_12px_rgba(0,212,255,0.2)] hover:shadow-[0_0_20px_rgba(0,212,255,0.4)] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer font-orbitron"
-                >
-                  <span>{loading ? "Creating Profile..." : "Create Secure Profile"}</span>
-                  <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform text-[#00d4ff]" />
-                </button>
-              </form>
-
-              {/* Splitter Row */}
-              <div className="relative w-full flex items-center justify-center select-none py-0.5">
-                <div className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-[#1e293b] to-transparent" />
-                <span className="relative px-2.5 text-[8.5px] font-bold text-white/30 bg-[#030615] tracking-[0.18em] font-mono">OR</span>
-              </div>
-
-              {/* Secondary Button matching visual reference: Dark hollow capsule with thin glowing border */}
-              <button
-                type="button"
-                onClick={() => router.push('/login')}
-                className="w-full relative group select-none overflow-hidden rounded-xl border border-[#00d4ff]/35 hover:border-[#00d4ff]/70 bg-transparent text-[#00d4ff] hover:text-white font-bold tracking-[0.12em] text-[9.5px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer font-orbitron"
-              >
-                <span>Return to Secure Login</span>
-                <UserPlus className="w-3.5 h-3.5" />
-              </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full relative mt-2 group select-none overflow-hidden rounded-xl border border-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 text-white font-bold tracking-[0.15em] text-[10px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 shadow-[0_0_12px_rgba(0,212,255,0.2)] hover:shadow-[0_0_20px_rgba(0,212,255,0.4)] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer font-orbitron"
+                  >
+                    <span>{loading ? "Verifying..." : "Verify Identity"}</span>
+                    <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform text-[#00d4ff]" />
+                  </button>
+                </form>
+              )}
 
               {/* Footer Connection Verification - Fully sealed bottom closure inside the rounded card */}
               <div className="flex flex-col items-center justify-center space-y-1 mt-1 pt-3.5 border-t border-[#00d4ff]/10 text-center select-none w-full">

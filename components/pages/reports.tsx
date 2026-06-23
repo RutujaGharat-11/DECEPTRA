@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, AlertCircle, AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { BarChart3, AlertCircle, AlertTriangle, CheckCircle2, ShieldAlert, ArrowRight } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
 
 type ReportsTab = 'overview' | 'history' | 'anomalies';

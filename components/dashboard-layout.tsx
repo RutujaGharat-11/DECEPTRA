@@ -1,21 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Navigation } from './navigation';
 import { Scanner } from './pages/scanner';
 import { History } from './pages/history';
 import { ProfileDashboard } from './pages/profile';
+import { Reports } from './pages/reports';
 import { BrandLogo } from './brand-logo';
 
-type Page = 'scanner' | 'history' | 'profile';
+type Page = 'scanner' | 'history' | 'profile' | 'reports';
+type ReportsTab = 'overview' | 'history' | 'anomalies';
 
 interface DashboardLayoutProps {
   initialPage?: Page;
+  initialReportsTab?: ReportsTab;
 }
 
-export function DashboardLayout({ initialPage = 'scanner' }: DashboardLayoutProps) {
+export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = 'overview' }: DashboardLayoutProps) {
   const [currentPage, setCurrentPage] = useState<Page>(initialPage);
   const [authReady, setAuthReady] = useState(false);
   const router = useRouter();
@@ -43,7 +45,7 @@ export function DashboardLayout({ initialPage = 'scanner' }: DashboardLayoutProp
     );
   }
 
-  // History and Profile use a shared branded header + scrollable layout
+  // All non-scanner pages use a shared branded header + scrollable layout
   return (
     <div className="flex flex-col h-screen bg-[#020813] overflow-hidden">
       {/* Branded Top Header */}
@@ -55,6 +57,7 @@ export function DashboardLayout({ initialPage = 'scanner' }: DashboardLayoutProp
       <main className="flex-1 overflow-y-auto pb-28">
         {currentPage === 'history' && <History />}
         {currentPage === 'profile' && <ProfileDashboard />}
+        {currentPage === 'reports' && <Reports initialTab={initialReportsTab} />}
       </main>
 
       {/* Bottom Navigation */}

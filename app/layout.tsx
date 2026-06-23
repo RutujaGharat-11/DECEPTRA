@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 
-// @ts-expect-error - global stylesheet resolved by Next.js bundler
 import './globals.css'
 
 const inter = Inter({ subsets: ["latin"] });
@@ -30,6 +29,8 @@ export const metadata: Metadata = {
   },
 }
 
+import { ClerkProvider } from '@clerk/nextjs'
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -38,7 +39,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`} suppressHydrationWarning>
+        <ClerkProvider>
           {children}
+        </ClerkProvider>
         <Analytics />
       </body>
     </html>

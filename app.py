@@ -20,6 +20,11 @@ from backend.gemini_engine import (
     model,
 )
 from backend.pipelines.voice_pipeline import process_voice_pipeline
+from backend.rate_limiter import (
+    check_and_record_scan,
+    get_scan_identifier,
+    init_rate_limit_table,
+)
 from backend.threat_engine import (
     HIGH_RISK_SIGNALS,
     SIGNAL_PATTERNS,
@@ -562,6 +567,7 @@ def _detect_input_language(text):
 
 
 _init_db()
+init_rate_limit_table()
 
 
 @app.route("/")
@@ -994,6 +1000,16 @@ def analyze():
                 app.logger.warning(f"Invalid token '{token}' provided, proceeding as anonymous user.")
                 # We do NOT return 401 here to allow public scans to continue seamlessly.
 
+        # ── Daily rate limit (5 scans / 24 h, shared across all scan types) ──
+        _rl_id = get_scan_identifier(request, user)
+        _rl = check_and_record_scan(_rl_id)
+        if not _rl["allowed"]:
+            app.logger.warning(
+                "SCAN_BLOCKED | identifier=%s scan_count=%d limit=%d",
+                _rl_id, _rl["count"], _rl["limit"],
+            )
+            return jsonify({"error": "Daily scan limit reached. Please try again tomorrow."}), 429
+
         data = request.get_json(silent=True) or {}
         modality = data.get("modality", "text")
         original_text = (data.get("message") or data.get("text") or "").strip()
@@ -1114,6 +1130,16 @@ def analyze_voice():
         user = _session_user(token)
         if not user:
             app.logger.warning(f"Invalid token '{token}' provided for audio, proceeding as anonymous.")
+
+    # ── Daily rate limit (5 scans / 24 h, shared across all scan types) ──
+    _rl_id = get_scan_identifier(request, user)
+    _rl = check_and_record_scan(_rl_id)
+    if not _rl["allowed"]:
+        app.logger.warning(
+            "SCAN_BLOCKED | identifier=%s scan_count=%d limit=%d",
+            _rl_id, _rl["count"], _rl["limit"],
+        )
+        return jsonify({"error": "Daily scan limit reached. Please try again tomorrow."}), 429
 
     uploaded_file = request.files.get("file") or request.files.get("audio")
     if not uploaded_file or uploaded_file.filename == "":

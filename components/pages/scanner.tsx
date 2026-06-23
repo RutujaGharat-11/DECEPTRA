@@ -371,6 +371,139 @@ type AnalysisResult = {
 
 type InputMode = 'text' | 'image' | 'document' | 'audio';
 
+type UploadMode = Extract<InputMode, 'image' | 'document' | 'audio'>;
+
+type UploadRejection = {
+  error: 'UPLOAD_REJECTED';
+  modality: UploadMode;
+  file_name: string;
+  file_size_bytes: number;
+  max_size_bytes: number;
+  received_extension: string | null;
+  received_mime_type: string | null;
+  allowed_extensions: string[];
+  allowed_mime_types: string[];
+  reason: string;
+};
+
+const MB = 1024 * 1024;
+
+const UPLOAD_RULES: Record<UploadMode, {
+  maxSizeBytes: number;
+  allowedExtensions: string[];
+  mimeTypesByExtension: Record<string, string[]>;
+}> = {
+  image: {
+    maxSizeBytes: 10 * MB,
+    allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+    mimeTypesByExtension: {
+      jpg: ['image/jpeg', 'image/jpg'],
+      jpeg: ['image/jpeg', 'image/jpg'],
+      png: ['image/png'],
+      webp: ['image/webp'],
+    },
+  },
+  document: {
+    maxSizeBytes: 20 * MB,
+    allowedExtensions: ['pdf', 'txt', 'csv'],
+    mimeTypesByExtension: {
+      pdf: ['application/pdf'],
+      txt: ['text/plain'],
+      csv: ['text/csv', 'application/csv', 'application/vnd.ms-excel'],
+    },
+  },
+  audio: {
+    maxSizeBytes: 25 * MB,
+    allowedExtensions: ['mp3', 'wav', 'm4a', 'mp4'],
+    mimeTypesByExtension: {
+      mp3: ['audio/mpeg', 'audio/mp3'],
+      wav: ['audio/wav', 'audio/x-wav', 'audio/wave'],
+      m4a: ['audio/mp4', 'audio/x-m4a', 'audio/m4a'],
+      mp4: ['audio/mp4', 'video/mp4'],
+    },
+  },
+};
+
+const getFileExtension = (fileName: string) => {
+  const parts = fileName.split('.');
+  if (parts.length < 2) return null;
+  return (parts.pop() || '').trim().toLowerCase() || null;
+};
+
+const normalizeMimeType = (mimeType: string) => mimeType.split(';')[0].trim().toLowerCase();
+
+const getAllowedMimeTypes = (modality: UploadMode) => Array.from(new Set(Object.values(UPLOAD_RULES[modality].mimeTypesByExtension).flat()));
+
+const validateUploadFile = (file: File, modality: UploadMode): UploadRejection | null => {
+  const rule = UPLOAD_RULES[modality];
+  const extension = getFileExtension(file.name);
+  const mimeType = normalizeMimeType(file.type || '');
+  const allowedMimeTypes = getAllowedMimeTypes(modality);
+
+  if (file.size > rule.maxSizeBytes) {
+    return {
+      error: 'UPLOAD_REJECTED',
+      modality,
+      file_name: file.name,
+      file_size_bytes: file.size,
+      max_size_bytes: rule.maxSizeBytes,
+      received_extension: extension,
+      received_mime_type: mimeType || null,
+      allowed_extensions: rule.allowedExtensions,
+      allowed_mime_types: allowedMimeTypes,
+      reason: 'File exceeds the allowed size limit.',
+    };
+  }
+
+  if (!extension || !rule.allowedExtensions.includes(extension)) {
+    return {
+      error: 'UPLOAD_REJECTED',
+      modality,
+      file_name: file.name,
+      file_size_bytes: file.size,
+      max_size_bytes: rule.maxSizeBytes,
+      received_extension: extension,
+      received_mime_type: mimeType || null,
+      allowed_extensions: rule.allowedExtensions,
+      allowed_mime_types: allowedMimeTypes,
+      reason: 'Unsupported file extension.',
+    };
+  }
+
+  if (!mimeType || !allowedMimeTypes.includes(mimeType)) {
+    return {
+      error: 'UPLOAD_REJECTED',
+      modality,
+      file_name: file.name,
+      file_size_bytes: file.size,
+      max_size_bytes: rule.maxSizeBytes,
+      received_extension: extension,
+      received_mime_type: mimeType || null,
+      allowed_extensions: rule.allowedExtensions,
+      allowed_mime_types: allowedMimeTypes,
+      reason: mimeType ? 'Unsupported MIME type.' : 'Missing MIME type.',
+    };
+  }
+
+  const allowedMimeTypesForExtension = rule.mimeTypesByExtension[extension] || [];
+  if (!allowedMimeTypesForExtension.includes(mimeType)) {
+    return {
+      error: 'UPLOAD_REJECTED',
+      modality,
+      file_name: file.name,
+      file_size_bytes: file.size,
+      max_size_bytes: rule.maxSizeBytes,
+      received_extension: extension,
+      received_mime_type: mimeType,
+      allowed_extensions: rule.allowedExtensions,
+      allowed_mime_types: allowedMimeTypesForExtension,
+      reason: 'File extension and MIME type do not match.',
+    };
+  }
+
+  return null;
+};
+
 const SCAN_STEPS_TEXT = [
   'Initializing scan protocol...',
   'Ingesting data payload...',
@@ -390,6 +523,7 @@ const SCAN_STEPS_AUDIO = [
 export function Scanner() {
   const [message, setMessage] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<UploadRejection | null>(null);
   const [status, setStatus] = useState<'idle' | 'scanning' | 'complete'>('idle');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [scanStepIndex, setScanStepIndex] = useState(0);
@@ -460,12 +594,26 @@ export function Scanner() {
   const handleAnalyze = async () => {
     if ((status === 'scanning') || (!message.trim() && !selectedFile)) return;
 
+    if (inputMode === 'audio' && selectedFile) {
+      const audioValidationError = validateUploadFile(selectedFile, 'audio');
+      if (audioValidationError) {
+        console.warn('[UPLOAD_REJECTED]', audioValidationError);
+        setUploadError(audioValidationError);
+        setSelectedFile(null);
+        setAnalysis(null);
+        setLogs([]);
+        if (audioInputRef.current) audioInputRef.current.value = '';
+        setStatus('idle');
+        return;
+      }
+    }
+
     setStatus('scanning');
     setAnalysis(null);
 
     try {
       const token = localStorage.getItem('auth_token');
-      const isAudioMode = inputMode === 'audio' && selectedFile;
+      const isAudioMode = inputMode === 'audio' && !!selectedFile;
 
       const response = isAudioMode
         ? await fetch(apiUrl('/analyze/audio'), {
@@ -534,6 +682,7 @@ export function Scanner() {
   const handleReset = () => {
     setMessage('');
     setSelectedFile(null);
+    setUploadError(null);
     setAnalysis(null);
     setStatus('idle');
     setLogs([]);
@@ -543,15 +692,24 @@ export function Scanner() {
   };
 
   const isSupportedAudioFile = (file: File) => {
-    return /\.(mp3|wav|m4a)$/i.test(file.name) || file.type.startsWith('audio/');
+    return validateUploadFile(file, 'audio') === null;
   };
 
   const ingestAudioFile = (file: File) => {
-    if (!isSupportedAudioFile(file)) {
-      alert('Please upload an MP3, WAV, or M4A call recording.');
+    const validationError = validateUploadFile(file, 'audio');
+    if (validationError) {
+      console.warn('[UPLOAD_REJECTED]', validationError);
+      setUploadError(validationError);
+      setSelectedFile(null);
+      setMessage('');
+      setAnalysis(null);
+      setStatus('idle');
+      setLogs([]);
+      if (audioInputRef.current) audioInputRef.current.value = '';
       return;
     }
 
+    setUploadError(null);
     setSelectedFile(file);
     setMessage('');
     setInputMode('audio');
@@ -566,6 +724,20 @@ export function Scanner() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const validationError = validateUploadFile(file, 'image');
+    if (validationError) {
+      console.warn('[UPLOAD_REJECTED]', validationError);
+      setUploadError(validationError);
+      setSelectedFile(null);
+      setMessage('');
+      setAnalysis(null);
+      setIsExtracting(false);
+      setExtractionProgress('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setUploadError(null);
     setSelectedFile(file);
     setIsExtracting(true);
     setExtractionProgress('Initializing OCR engine...');
@@ -593,6 +765,20 @@ export function Scanner() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const validationError = validateUploadFile(file, 'document');
+    if (validationError) {
+      console.warn('[UPLOAD_REJECTED]', validationError);
+      setUploadError(validationError);
+      setSelectedFile(null);
+      setMessage('');
+      setAnalysis(null);
+      setIsExtracting(false);
+      setExtractionProgress('');
+      if (docInputRef.current) docInputRef.current.value = '';
+      return;
+    }
+
+    setUploadError(null);
     setSelectedFile(file);
     setIsExtracting(true);
     setExtractionProgress('Ready for analysis...');
@@ -881,6 +1067,13 @@ export function Scanner() {
                 </div>
               )}
 
+              {uploadError && (
+                <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-[11px] text-red-100 font-mono">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.22em] text-red-300">Upload rejected</p>
+                  <pre className="whitespace-pre-wrap break-words overflow-x-auto">{JSON.stringify(uploadError, null, 2)}</pre>
+                </div>
+              )}
+
               {inputMode === 'text' && (
                 <textarea
                   value={message}
@@ -892,18 +1085,18 @@ export function Scanner() {
               )}
               {inputMode === 'image' && (
                 <div className="flex-1 flex flex-col items-center justify-center cursor-pointer hover:bg-[#1e3a8a]/20 transition-all rounded-lg border-2 border-dashed border-[#1e3a8a]/50 m-2" onClick={() => fileInputRef.current?.click()}>
-                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/jpg,image/png,image/webp" onChange={handleImageUpload} />
                   <UploadCloud className="w-10 h-10 text-[#00D4FF]/50 mb-3" />
                   <p className="text-sm font-medium text-white mb-1">Optical Character Recognition</p>
-                  <p className="text-[10px] text-white/40 text-center px-4">Click to upload image. Text will be extracted directly into the terminal.</p>
+                  <p className="text-[10px] text-white/40 text-center px-4">Click to upload JPG, JPEG, PNG, or WEBP files up to 10 MB.</p>
                 </div>
               )}
               {inputMode === 'document' && (
                 <div className="flex-1 flex flex-col items-center justify-center cursor-pointer hover:bg-[#1e3a8a]/20 transition-all rounded-lg border-2 border-dashed border-[#1e3a8a]/50 m-2" onClick={() => docInputRef.current?.click()}>
-                  <input type="file" ref={docInputRef} className="hidden" accept=".pdf,.doc,.docx,.txt,.csv" onChange={handleDocumentUpload} />
+                  <input type="file" ref={docInputRef} className="hidden" accept=".pdf,.txt,.csv,application/pdf,text/plain,text/csv,application/csv,application/vnd.ms-excel" onChange={handleDocumentUpload} />
                   <FileDigit className="w-10 h-10 text-[#00D4FF]/50 mb-3" />
                   <p className="text-sm font-medium text-white mb-1">Document Parsing</p>
-                  <p className="text-[10px] text-white/40 text-center px-4">Upload TXT, PDF, or CSV for text extraction into the payload.</p>
+                  <p className="text-[10px] text-white/40 text-center px-4">Upload PDF, TXT, or CSV files up to 20 MB.</p>
                 </div>
               )}
               {inputMode === 'audio' && (
@@ -918,7 +1111,7 @@ export function Scanner() {
                     type="file"
                     ref={audioInputRef}
                     className="hidden"
-                    accept=".mp3,.wav,.m4a,audio/*"
+                    accept=".mp3,.wav,.m4a,.mp4,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/mp4,audio/x-m4a,audio/m4a,video/mp4"
                     onChange={handleAudioUpload}
                   />
                   <div className="p-4 rounded-full bg-[#00D4FF]/10 border border-[#00D4FF]/30">
@@ -926,7 +1119,7 @@ export function Scanner() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm font-bold text-white uppercase tracking-widest">Upload Call Recording</p>
-                    <p className="text-[10px] text-white/45 font-mono uppercase tracking-[0.18em]">Drag & drop or choose .mp3 / .wav / .m4a</p>
+                    <p className="text-[10px] text-white/45 font-mono uppercase tracking-[0.18em]">Drag & drop or choose .mp3 / .wav / .m4a / .mp4 up to 25 MB</p>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-3">
                     <button

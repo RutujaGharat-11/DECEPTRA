@@ -2,9 +2,8 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useState } from 'react';
-import { useAuth } from '@clerk/nextjs';
-import { useSignIn } from '@clerk/nextjs/legacy';
+import { FormEvent, useState } from 'react';
+import { apiUrl } from '@/lib/api';
 import Image from 'next/image';
 import { Orbitron } from 'next/font/google';
 import { User, Lock, Eye, EyeOff, ArrowRight, UserPlus } from 'lucide-react';
@@ -15,58 +14,51 @@ const orbitron = Orbitron({
   variable: '--font-orbitron',
 });
 
-export default function LoginPage() {
+export default function CreateAccountPage() {
   const router = useRouter();
-  const { isLoaded, signIn, setActive } = useSignIn();
-  const { userId } = useAuth();
-  
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (userId) {
-      router.replace('/');
-    }
-  }, [userId, router]);
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isLoaded) return;
     setError('');
-    setLoading(true);
 
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
+      const response = await fetch(apiUrl('/auth/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: fullName,
+          email,
+          password,
+          confirm_password: confirmPassword,
+        }),
       });
 
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
-        router.replace('/');
-      } else {
-        setError('Additional verification required.');
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        setError(data.error || 'Unable to create account');
+        return;
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage || 'Login failed');
+
+      router.replace('/login');
+    } catch {
+      setError('Unable to reach server');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    if (!isLoaded) return;
-    try {
-      await signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/',
-      });
-    } catch (err: any) {
-      setError(err.errors?.[0]?.longMessage || 'Unable to sign in with Google');
     }
   };
 
@@ -467,17 +459,17 @@ export default function LoginPage() {
                 </div>
                 
                 <span className="text-[9px] tracking-[0.25em] text-[#00d4ff] font-bold uppercase text-center block mt-2.5 select-none font-orbitron">
-                  Welcome back, analyst
+                  Initialize Access Node
                 </span>
                 
                 <h2 
                   className="text-lg sm:text-[21px] font-extrabold text-white tracking-[0.15em] uppercase text-center mt-0.5 select-none font-orbitron"
                 >
-                  Access Deceptra
+                  Create Account
                 </h2>
                 
                 <p className="text-[10px] text-[#94a3b8]/75 text-center mt-1 select-none font-medium">
-                  Authenticate your neural identity to continue
+                  Set up your deception risk scanner profile
                 </p>
                 
                 {/* Premium separation bar with glowing notch */}
@@ -498,9 +490,28 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Authentication Core Form */}
+              {/* Account Initialization Form */}
               <form onSubmit={handleSubmit} className="flex flex-col space-y-3">
                 
+                {/* Field: Full Name */}
+                <div className="flex flex-col gap-1 text-left">
+                  <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="fullName">
+                    Full Name
+                  </label>
+                  <div className="relative flex items-center">
+                    <User className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                    <input
+                      id="fullName"
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Enter your full name"
+                      required
+                      className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-4 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
+                    />
+                  </div>
+                </div>
+
                 {/* Field: Email */}
                 <div className="flex flex-col gap-1 text-left">
                   <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="email">
@@ -532,7 +543,7 @@ export default function LoginPage() {
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
+                      placeholder="Create secure password"
                       required
                       className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
                     />
@@ -546,21 +557,30 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-                {/* Utility Row: Remember / Forgot */}
-                <div className="flex items-center justify-between text-[10px] mt-1 select-none font-medium">
-                  <label className="flex items-center gap-1.5 text-white/65 hover:text-white cursor-pointer transition-colors">
-                    <input
-                      type="checkbox"
-                      className="w-3.5 h-3.5 rounded border-[#1e293b] bg-[#030615] text-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff] focus:ring-offset-0 outline-none cursor-pointer"
-                    />
-                    <span>Remember device</span>
+                {/* Field: Confirm Password */}
+                <div className="flex flex-col gap-1 text-left">
+                  <label className="text-[9px] sm:text-[10px] font-semibold tracking-wider text-[#94a3b8]/85 uppercase select-none" htmlFor="confirmPassword">
+                    Confirm Password
                   </label>
-                  <Link
-                    href="/forgot-password"
-                    className="text-[#6366f1] hover:text-[#818cf8] transition-colors font-semibold"
-                  >
-                    Forgot Password?
-                  </Link>
+                  <div className="relative flex items-center">
+                    <Lock className="absolute left-3.5 w-3.5 h-3.5 text-[#00d4ff]/50 pointer-events-none" />
+                    <input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm secure password"
+                      required
+                      className="w-full bg-[#030615]/95 border border-[#1e293b] focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/50 text-white rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-[11px] sm:text-xs transition-all placeholder:text-white/20 outline-none shadow-[0_0_8px_rgba(0,0,0,0.6)] font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3.5 text-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors focus:outline-none"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Primary Button matching visual reference: Cyan bordered dark blue glow capsule */}
@@ -569,24 +589,8 @@ export default function LoginPage() {
                   disabled={loading}
                   className="w-full relative mt-2 group select-none overflow-hidden rounded-xl border border-[#00d4ff] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 text-white font-bold tracking-[0.15em] text-[10px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 shadow-[0_0_12px_rgba(0,212,255,0.2)] hover:shadow-[0_0_20px_rgba(0,212,255,0.4)] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer font-orbitron"
                 >
-                  <span>{loading ? "Authorizing..." : "Sign In to Deceptra"}</span>
+                  <span>{loading ? "Creating Profile..." : "Create Secure Profile"}</span>
                   <ArrowRight className="w-3.5 h-3.5 transform group-hover:translate-x-0.5 transition-transform text-[#00d4ff]" />
-                </button>
-                
-                {/* Google Sign-In Button matching visual reference */}
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={!isLoaded || loading}
-                  className="w-full relative mt-2 group select-none overflow-hidden rounded-xl border border-[#94a3b8]/30 bg-[#030615] hover:bg-[#1e293b]/50 text-white font-bold tracking-[0.1em] text-[10px] sm:text-xs py-3 sm:py-3.5 transition-all duration-300 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer font-orbitron"
-                >
-                  <svg viewBox="0 0 24 24" className="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                  </svg>
-                  <span>Sign In with Google</span>
                 </button>
               </form>
 
@@ -599,10 +603,10 @@ export default function LoginPage() {
               {/* Secondary Button matching visual reference: Dark hollow capsule with thin glowing border */}
               <button
                 type="button"
-                onClick={() => router.push('/create-account')}
+                onClick={() => router.push('/login')}
                 className="w-full relative group select-none overflow-hidden rounded-xl border border-[#00d4ff]/35 hover:border-[#00d4ff]/70 bg-transparent text-[#00d4ff] hover:text-white font-bold tracking-[0.12em] text-[9.5px] sm:text-xs uppercase py-3 sm:py-3.5 transition-all duration-300 active:scale-[0.99] flex items-center justify-center gap-1.5 cursor-pointer font-orbitron"
               >
-                <span>Initialize New Access Node</span>
+                <span>Return to Secure Login</span>
                 <UserPlus className="w-3.5 h-3.5" />
               </button>
 
