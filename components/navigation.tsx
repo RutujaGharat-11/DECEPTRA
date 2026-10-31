@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import Dock from './ui/Dock';
 
-type Page = 'scanner' | 'history' | 'profile' | 'reports';
+type Page = 'scanner' | 'history' | 'profile';
 
 interface NavigationProps {
   currentPage: Page;
@@ -32,11 +32,7 @@ export function Navigation({ currentPage, onPageChange }: NavigationProps) {
       label: 'Profile', 
       onClick: () => onPageChange('profile') 
     },
-    { 
-      icon: <BarChart2 size={24} className={currentPage === 'reports' ? 'text-primary' : 'text-muted-foreground'} />, 
-      label: 'Reports', 
-      onClick: () => onPageChange('reports') 
-    },
+
   ];
 
   return (

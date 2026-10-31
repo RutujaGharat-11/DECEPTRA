@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth, useUser } from '@clerk/nextjs';
 import {
   LogOut,
   ShieldCheck,
@@ -23,6 +24,8 @@ type HistoryItem = {
 
 export function ProfileDashboard() {
   const router = useRouter();
+  const { signOut } = useAuth();
+  const { user } = useUser();
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   
@@ -34,21 +37,27 @@ export function ProfileDashboard() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    const cachedUser = localStorage.getItem('auth_user');
-
-    if (cachedUser) {
-      try {
-        const parsed = JSON.parse(cachedUser) as { full_name?: string; email?: string };
-        setProfileName(parsed.full_name || 'User');
-        setProfileEmail(parsed.email || '');
-      } catch {
-        setProfileName('User');
+    if (user) {
+      const name = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || 'User';
+      const email = user.primaryEmailAddress?.emailAddress || '';
+      setProfileName(name);
+      setProfileEmail(email);
+    } else {
+      const cachedUser = localStorage.getItem('auth_user');
+      if (cachedUser) {
+        try {
+          const parsed = JSON.parse(cachedUser) as { full_name?: string; email?: string };
+          setProfileName(parsed.full_name || 'User');
+          setProfileEmail(parsed.email || '');
+        } catch {
+          setProfileName('User');
+        }
       }
     }
 
+    const token = localStorage.getItem('auth_token');
     if (!token) {
-      router.replace('/login');
+      setIsLoaded(true);
       return;
     }
 
@@ -64,9 +73,7 @@ export function ProfileDashboard() {
         localStorage.setItem('auth_user', JSON.stringify(data));
       })
       .catch(() => {
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('auth_user');
-        router.replace('/login');
+        // Fallback gracefully without redirecting logged-in Clerk user
       });
 
     // Fetch History for Stats
@@ -88,7 +95,7 @@ export function ProfileDashboard() {
       })
       .catch(() => {})
       .finally(() => setIsLoaded(true));
-  }, [router]);
+  }, [user]);
 
   const initials = (profileName || 'User')
     .split(' ')
@@ -110,6 +117,11 @@ export function ProfileDashboard() {
 
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
+    try {
+      await signOut();
+    } catch (e) {
+      console.error('Clerk signout error:', e);
+    }
     router.replace('/login');
   };
 

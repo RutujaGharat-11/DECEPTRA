@@ -121,7 +121,7 @@ export function History() {
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
-      router.replace('/login');
+      setLoading(false);
       return;
     }
 
@@ -131,8 +131,6 @@ export function History() {
       .then(async (res) => {
         if (res.status === 401) {
           localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_user');
-          router.replace('/login');
           return [] as HistoryItem[];
         }
         return (await res.json()) as HistoryItem[];
@@ -140,7 +138,7 @@ export function History() {
       .then((items) => setHistory(Array.isArray(items) ? items : []))
       .catch(() => setHistory([]))
       .finally(() => setLoading(false));
-  }, [router]);
+  }, []);
 
   const timeAgo = (timestamp: string) => {
     const then = new Date(timestamp).getTime();
@@ -222,7 +220,6 @@ export function History() {
       });
       if (res.status === 401) {
         localStorage.removeItem('auth_token');
-        router.replace('/login');
         return;
       }
       setHistory([]);

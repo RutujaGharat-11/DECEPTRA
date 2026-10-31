@@ -53,7 +53,7 @@ export default function ReportDetailPage() {
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
-      router.replace('/login');
+      setLoading(false);
       return;
     }
 
@@ -63,8 +63,6 @@ export default function ReportDetailPage() {
       .then(async (res) => {
         if (res.status === 401) {
           localStorage.removeItem('auth_token');
-          localStorage.removeItem('auth_user');
-          router.replace('/login');
           return null;
         }
         if (!res.ok) {

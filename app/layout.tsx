@@ -39,7 +39,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`} suppressHydrationWarning>
-        <ClerkProvider>
+        <ClerkProvider signInUrl="/login" signUpUrl="/create-account">
           {children}
         </ClerkProvider>
         <Analytics />

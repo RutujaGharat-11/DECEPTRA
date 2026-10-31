@@ -1,37 +1,102 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@clerk/nextjs';
 import { Navigation } from './navigation';
 import { Scanner } from './pages/scanner';
 import { History } from './pages/history';
 import { ProfileDashboard } from './pages/profile';
-import { Reports } from './pages/reports';
 import { BrandLogo } from './brand-logo';
+import { apiUrl } from '@/lib/api';
 
-type Page = 'scanner' | 'history' | 'profile' | 'reports';
-type ReportsTab = 'overview' | 'history' | 'anomalies';
+type Page = 'scanner' | 'history' | 'profile';
 
 interface DashboardLayoutProps {
   initialPage?: Page;
-  initialReportsTab?: ReportsTab;
 }
 
-export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = 'overview' }: DashboardLayoutProps) {
+export function DashboardLayout({ initialPage = 'scanner' }: DashboardLayoutProps) {
   const [currentPage, setCurrentPage] = useState<Page>(initialPage);
-  const [authReady, setAuthReady] = useState(false);
   const router = useRouter();
 
+  const { isLoaded: clerkLoaded, isSignedIn, user } = useUser();
+  const syncAttemptedRef = useRef(false);
+
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
+    if (!clerkLoaded) return;
+
+    if (!isSignedIn) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
       router.replace('/login');
       return;
     }
-    setAuthReady(true);
-  }, [router]);
 
-  if (!authReady) {
+    if (!user || syncAttemptedRef.current) return;
+    syncAttemptedRef.current = true;
+
+    const fullName = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || 'User';
+    const email = user.primaryEmailAddress?.emailAddress || '';
+
+    // Cache user profile immediately from Clerk session
+    if (!localStorage.getItem('auth_user')) {
+      localStorage.setItem('auth_user', JSON.stringify({ full_name: fullName, email }));
+    }
+
+    const syncBackend = async () => {
+      const existingToken = localStorage.getItem('auth_token');
+      if (existingToken) return;
+
+      const password = user.id;
+
+      try {
+        let response = await fetch(apiUrl('/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (response.status === 401) {
+          const regResponse = await fetch(apiUrl('/auth/register'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              full_name: fullName,
+              email,
+              password,
+              confirm_password: password,
+            }),
+          });
+
+          if (regResponse.ok) {
+            response = await fetch(apiUrl('/auth/login'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email, password }),
+            });
+          }
+        }
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.token) {
+            localStorage.setItem('auth_token', data.token);
+          }
+          if (data.user) {
+            localStorage.setItem('auth_user', JSON.stringify(data.user));
+          }
+        }
+      } catch (err) {
+        // Backend synchronization error should not block Clerk authentication
+        console.warn('Backend sync error (continuing with Clerk session):', err);
+      }
+    };
+
+    void syncBackend();
+  }, [clerkLoaded, isSignedIn, user, router]);
+
+  if (!clerkLoaded || !isSignedIn) {
     return null;
   }
 
@@ -57,7 +122,6 @@ export function DashboardLayout({ initialPage = 'scanner', initialReportsTab = '
       <main className="flex-1 overflow-y-auto pb-28">
         {currentPage === 'history' && <History />}
         {currentPage === 'profile' && <ProfileDashboard />}
-        {currentPage === 'reports' && <Reports initialTab={initialReportsTab} />}
       </main>
 
       {/* Bottom Navigation */}

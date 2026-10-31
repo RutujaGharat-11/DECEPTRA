@@ -18,7 +18,7 @@ const orbitron = Orbitron({
 export default function LoginPage() {
   const router = useRouter();
   const { isLoaded, signIn, setActive } = useSignIn();
-  const { userId } = useAuth();
+  const { isLoaded: authLoaded, isSignedIn, userId } = useAuth();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,14 +27,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (userId) {
+    if (authLoaded && (isSignedIn || userId)) {
       router.replace('/');
     }
-  }, [userId, router]);
+  }, [authLoaded, isSignedIn, userId, router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || loading) return;
     setError('');
     setLoading(true);
 
@@ -58,7 +58,8 @@ export default function LoginPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!isLoaded) return;
+    if (!isLoaded || loading) return;
+    setError('');
     try {
       await signIn.authenticateWithRedirect({
         strategy: 'oauth_google',
